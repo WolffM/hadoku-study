@@ -135,14 +135,43 @@ is repo-global and will swallow other agents' files.
 `@wolffm` package bugs are **never** worked around. Diagnose, write fix
 instructions, wait for the publish.
 
+## This app is scaffolded DARK — `hadoku.me/study` returns 404, on purpose
+
+There is no `/study` route and no MF registry entry yet, and **that is the
+correct state**. A UI app has no bundle until its package publishes, and
+`public/mf/study/` is filled at DEPLOY time from the installed package — so
+registering the route early emits a page whose script tags point at files
+`dist/` does not contain. `verify-dist-links` catches that and reds the Pages
+deploy, and because the registry is built at deploy time, one red Pages run
+blocks **every app in the fleet**. That is not hypothetical: it happened on
+2026-08-18 when this app was scaffolded, and cost four deploys over 42 minutes.
+
+So do not "fix" the 404 by adding the route. Going live is one command in
+hadoku_site, run **after** `@wolffm/study` has published:
+
+```bash
+cd ../hadoku_site
+pnpm install && pnpm run update-study-bundle
+node scripts/build/hydrate-child-app.mjs --go-live study
+pnpm run build && node scripts/build/verify-dist-links.mjs ./dist   # prove it
+```
+
+`--go-live` flips the registry entry, adds the route, and registers the
+published packages together, and refuses to run while the bundle is missing.
+
 ## Done means
 
-- `pnpm check` green (that's the job name branch protection wants).
+- `pnpm check` green. That job name is this repo's REQUIRED status context —
+  branch protection is already on and requires it.
+- Run it the way CI does before pushing, not the way your shell is warmed up:
+  `rm -rf node_modules && pnpm install --frozen-lockfile && pnpm check`.
 - The app mounts at `hadoku.me/study` via `mount(el)` / `unmount(el)` from
-  `entry.tsx`.
-- First publish of `@wolffm/study` triggers `packages_updated`, which auto-adds
-  the dependency in hadoku_site and rebuilds the bundle. Verify the registry
-  entry appears rather than assuming it did.
+  `entry.tsx` — **after** the go-live step above.
+- `@wolffm/study-worker` has never published. Until the `worker/` tree changes
+  and publishes it, it is deliberately absent from hadoku_site's
+  DEFAULT_PACKAGES; `--go-live` adds whichever packages actually resolve on the
+  registry. Do not add it by hand — a package that 404s reds Update Packages on
+  every release.
 - A published set is readable signed-out, on a phone, and a private set 404s to
   a stranger. Check both by hand — the tier ladder is the thing most likely to
   be subtly wrong.
