@@ -7,14 +7,11 @@
  * @example
  * ```typescript
  * // In hadoku_site/workers/study-api/src/index.ts
- * import { createFetchHandler, createScheduledHandler } from '@wolffm/study-worker';
+ * import { createFetchHandler, type AppEnv } from '@wolffm/study-worker';
  *
  * export default {
- *   async fetch(request, env) {
+ *   async fetch(request: Request, env: AppEnv): Promise<Response> {
  *     return createFetchHandler(env)(request);
- *   },
- *   scheduled(event, env, ctx) {
- *     ctx.waitUntil(createScheduledHandler(env)(event.cron));
  *   },
  * };
  * ```
@@ -32,11 +29,8 @@ import {
 } from '@wolffm/worker-utils';
 import type { AppEnv } from './types.js';
 import { healthRoutes } from './routes/health.js';
-import { exampleRoutes } from './routes/example.js';
-
-// ============================================================================
-// App Context
-// ============================================================================
+import { setRoutes } from './routes/sets.js';
+import { progressRoutes } from './routes/progress.js';
 
 interface AppContext {
 	Bindings: AppEnv;
@@ -44,10 +38,6 @@ interface AppContext {
 		authContext: HadokuAuthContext;
 	};
 }
-
-// ============================================================================
-// Create Hono App
-// ============================================================================
 
 function createApp() {
 	const app = new OpenAPIHono<AppContext>({
@@ -58,19 +48,20 @@ function createApp() {
 	// Middleware Stack
 	// --------------------------------------------------------------------------
 
-	// 1. CORS Middleware - Allow hadoku.me origins
 	app.use(
 		'*',
 		cors({
 			origin: DEFAULT_HADOKU_ORIGINS,
-			allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+			allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 			allowHeaders: ['Content-Type', 'X-User-Key', 'X-API-Key', 'X-Session-Id'],
 			credentials: true,
 			maxAge: 86400,
 		})
 	);
 
-	// 2. Authentication Middleware
+	// Resolves the edge-stamped tier onto `authContext`. It never refuses a
+	// request — routes gate themselves, because this API's paths are public to
+	// read and friend+ to write on the SAME path (see routes/sets.ts).
 	app.use('*', createEdgeAuth());
 
 	// --------------------------------------------------------------------------
@@ -83,7 +74,8 @@ function createApp() {
 	// hadoku.me/study/api/health.
 
 	app.route('/study/api', healthRoutes);
-	app.route('/study/api', exampleRoutes);
+	app.route('/study/api', setRoutes);
+	app.route('/study/api', progressRoutes);
 
 	// --------------------------------------------------------------------------
 	// OpenAPI Spec Endpoint
@@ -95,20 +87,27 @@ function createApp() {
 			title: 'Study API',
 			version: '1.0.0',
 			description: `
-API for Study.
+Flashcard sets you create and drill.
+
+## Visibility
+A set is owned by a user and private by default. Publishing is a per-set flag —
+not a second copy — after which anyone, including signed-out readers, may read
+and study it. A private set is reported as ABSENT to anyone but its owner, so
+probing ids reveals nothing.
 
 ## Authentication
-- **Public endpoints**: Health check and read operations
-- **Protected endpoints**: Write operations require X-User-Key header
-- **Admin endpoints**: Delete operations require admin authentication
-
-## Usage
-See the endpoint documentation below for details on each operation.
+- **Read a published set**: public, no account.
+- **Create or modify a set**: friend tier or above, and the row binds to the
+  registry userId that edge-router injects as X-User-Id.
+- **Progress**: gated on identity rather than tier — it is private data about a
+  set the caller can already read. Signed-out readers keep progress on-device.
 			`,
 			production: 'https://hadoku.me/study/api',
 			tags: [
 				{ name: 'Health', description: 'Health check endpoints' },
-				{ name: 'Items', description: 'Example CRUD operations' },
+				{ name: 'Sets', description: 'Flashcard set CRUD and publishing' },
+				{ name: 'Cards', description: 'The cards inside a set' },
+				{ name: 'Progress', description: 'Where a reader left off in a set' },
 			],
 		})
 	);
@@ -124,10 +123,6 @@ See the endpoint documentation below for details on each operation.
 	return app;
 }
 
-// ============================================================================
-// Exported Factory Functions
-// ============================================================================
-
 /**
  * Create the fetch handler for HTTP requests.
  *
@@ -139,27 +134,5 @@ export function createFetchHandler(env: AppEnv) {
 	return (request: Request) => app.fetch(request, env);
 }
 
-/**
- * Create the scheduled handler for cron jobs.
- *
- * @param env - Worker environment bindings
- * @returns Cron handler function
- */
-export function createScheduledHandler(_env: AppEnv) {
-	return (cron: string) => {
-		console.log(`[study-worker] Scheduled task: ${cron}`);
-
-		// Add your scheduled task logic here
-		// Example:
-		// if (cron === '0 */8 * * *') {
-		//   await syncData(env);
-		// }
-	};
-}
-
-// ============================================================================
-// Re-exports
-// ============================================================================
-
-export type { AppEnv } from './types.js';
+export type { AppEnv, CardRow, ProgressRow, SetRow } from './types.js';
 export * from './schemas.js';

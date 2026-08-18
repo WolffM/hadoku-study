@@ -8,7 +8,12 @@ This package is consumed by a thin host worker in `hadoku_site/workers/study-api
 
 ```
 @wolffm/study-worker (this package)
-  └── Exports: createFetchHandler(), createScheduledHandler(), types
+  └── Exports: createFetchHandler(), types
+
+There is no `createScheduledHandler`: nothing about a flashcard set expires,
+falls due or needs sweeping, so this worker has no cron trigger. Adding one back
+means adding a `[triggers]` block to the host's wrangler.toml at the same time —
+an exported handler with no trigger bound is dead code that reads as a feature.
 
 hadoku_site/workers/study-api (host worker)
   └── Imports this package and delegates requests
@@ -19,8 +24,40 @@ hadoku_site/workers/study-api (host worker)
 - `src/index.ts` - Main exports (factory functions)
 - `src/types.ts` - Environment interface (AppEnv)
 - `src/schemas.ts` - Zod schemas for OpenAPI
-- `src/routes/health.ts` - Health check endpoint
-- `src/routes/example.ts` - Example CRUD routes (replace with real logic)
+- `src/db.ts` - D1 helpers, id generation, and the visibility rules
+- `src/auth.ts` - who may read, who may write
+- `src/routes/health.ts` - Health check endpoint (probes D1)
+- `src/routes/sets.ts` - set + card CRUD, publish/unpublish
+- `src/routes/progress.ts` - a reader's saved place in a set
+
+## Access model, in one place
+
+Two independent facts gate a write, and they fail separately:
+
+- **Tier** — friend+, always through `tierAtLeast`, never `userType === 'friend'`.
+  The ladder is `public < friend < service < wife < admin`, so an equality check
+  silently excludes every tier above the one named.
+- **Identity** — the registry `userId` that edge-router injects as `X-User-Id`.
+  Rows bind to it, never to a raw key, because a key can rotate and the userId
+  does not.
+
+Reading is different: a PUBLISHED set is public, and a private set is filtered
+out by SQL rather than by a tier check — so a stranger gets the same 404 whether
+the id is real or not. That is why the gate lives in each handler and not in a
+`requireMinTier` mounted on the path: `/sets/:id` is public to GET and friend+
+to PATCH, and a path-level middleware cannot express one path with two policies.
+
+## Database
+
+D1, bound as `STUDY_DB`. Three tables — `sets`, `cards`, `set_progress` — with
+migrations in `hadoku_site/workers/study-api/migrations/`.
+
+`set_progress` is a resume BOOKMARK, not a scheduling record: v1 is a plain pass
+over a set, so there is no interval or due date. Its `results` column stores a
+JSON map of cardId to a result STRING (`got` / `missed`) rather than a boolean,
+because v2 judges typed answers with an LLM and will need a third verdict —
+widening a string union is not a migration, dropping a `correct BOOLEAN` column
+is.
 
 ## Development
 
@@ -88,10 +125,10 @@ This worker uses `createEdgeAuth()` (from `@wolffm/worker-utils`) — edge-route
 
 Set as CF Worker secrets (pushed via `python3 scripts/administration.py cloudflare-secrets <worker-name>`):
 
-| Variable                   | Description                                                        |
-| -------------------------- | ------------------------------------------------------------------ |
-| `EDGE_AUTH_SECRET`         | Shared edge-auth provenance token validated by `createEdgeAuth()`  |
-| `STUDY_API_KEY` | Service-specific outbound auth (only if this worker calls others)  |
+| Variable           | Description                                                       |
+| ------------------ | ----------------------------------------------------------------- |
+| `EDGE_AUTH_SECRET` | Shared edge-auth provenance token validated by `createEdgeAuth()` |
+| `STUDY_API_KEY`    | Service-specific outbound auth (only if this worker calls others) |
 
 ## Deployment
 

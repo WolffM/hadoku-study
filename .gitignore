@@ -36,5 +36,9 @@ coverage/
 .tmp/
 .cache/
 
+# Agent worktrees (`git worktree add .claude/worktrees/<task>`). The rest of
+# .claude/ IS tracked — settings.json is checked in.
+.claude/worktrees/
+
 # per-repo vault key (Phase 2 of per-key ACL plan; never commit)
 .devvault.local.json

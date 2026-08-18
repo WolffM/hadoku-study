@@ -28,7 +28,15 @@ export default defineConfig({
         '@wolffm/task-ui-components',
         '@wolffm/logger/client',
         '@wolffm/prefs-client',
-        '@wolffm/prefs-client/react'
+        '@wolffm/prefs-client/react',
+        // zod is in the parent's import map too (esm.sh/zod@4), because
+        // @wolffm/themes depends on it directly. It arrives here through
+        // @wolffm/prefs-client's schema API, which takes a zod schema as a
+        // VALUE — so an inlined copy would not throw, it would just ship ~100 kB
+        // of a module the page has already loaded. The rule is mechanical:
+        // anything in the import map that you import is external, whether or
+        // not it is a singleton.
+        'zod'
       ],
       output: {
         assetFileNames: 'style.css'

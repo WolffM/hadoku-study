@@ -1,7 +1,9 @@
 /**
- * Health check routes
+ * Health check.
  *
- * Public endpoint for monitoring service health.
+ * Public, and reachable both through the edge and directly at *.workers.dev —
+ * the monitoring probe uses the direct path with no auth header, which
+ * `createEdgeAuth` degrades to `public` rather than refusing.
  */
 
 import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
@@ -14,45 +16,38 @@ interface RouteContext {
 
 const app = new OpenAPIHono<RouteContext>();
 
-// ============================================================================
-// Health Check Endpoint
-// ============================================================================
-
 const healthRoute = createRoute({
 	method: 'get',
 	path: '/health',
 	tags: ['Health'],
 	summary: 'Health check',
-	description: 'Returns the health status of the Study API',
+	description: 'Returns the health status of the Study API, including D1 reachability.',
 	responses: {
 		200: {
 			description: 'API is healthy',
-			content: {
-				'application/json': {
-					schema: HealthResponseSchema,
-				},
-			},
+			content: { 'application/json': { schema: HealthResponseSchema } },
 		},
 	},
 });
 
-app.openapi(healthRoute, (c) => {
-	// Add any health checks here (DB connectivity, external services, etc.)
-	// Example with D1:
-	// try {
-	//   await c.env.STUDY_DB.prepare('SELECT 1').first();
-	//   dbOk = true;
-	// } catch {
-	//   dbOk = false;
-	// }
-
-	const status = 'healthy'; // or 'degraded' or 'unhealthy' based on checks
+app.openapi(healthRoute, async (c) => {
+	// Actually touch D1. Reporting `healthy` without it would make this endpoint
+	// answer "the worker booted", which is not the question anyone asks it —
+	// every route below this one is unusable without the binding.
+	let database = false;
+	try {
+		await c.env.STUDY_DB.prepare('SELECT 1').first();
+		database = true;
+	} catch (err) {
+		console.error('[study-worker] D1 health probe failed:', err);
+	}
 
 	return c.json(
 		{
-			status,
+			status: database ? ('healthy' as const) : ('unhealthy' as const),
 			service: 'study-worker' as const,
 			timestamp: new Date().toISOString(),
+			database,
 		},
 		200
 	);

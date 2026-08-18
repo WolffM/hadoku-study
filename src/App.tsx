@@ -1,7 +1,19 @@
-import { useRef, type RefObject } from 'react'
+import { useCallback, useMemo, useRef, useState, type RefObject } from 'react'
 import { AppHeader, LoadingSkeleton } from '@wolffm/task-ui-components'
 import { HadokuThemeRoot, useHadokuTheme } from '@wolffm/themes'
+import { usePrefs } from '@wolffm/prefs-client/react'
 import type { StudyProps } from './entry'
+import { createClient } from './api/client'
+import { canAuthor as canAuthorNow, hasIdentity } from './api/session'
+import { studyPrefs } from './prefs/studyPrefs'
+import { useRoute } from './state/useRoute'
+import { Gallery } from './views/Gallery'
+import { SetPage } from './views/SetPage'
+import { Editor } from './views/Editor'
+
+/** Where the API lives when the registry does not say otherwise. Same-origin
+ *  through edge-router, which is what makes cookie auth work at all. */
+const DEFAULT_API_BASE = '/study/api'
 
 /**
  * Provider boundary.
@@ -21,39 +33,100 @@ export default function App(props: StudyProps = {}) {
   const containerRef = useRef<HTMLElement>(null)
   return (
     <HadokuThemeRoot theme={props.theme} containerRef={containerRef}>
-      <AppInner containerRef={containerRef} />
+      <AppInner containerRef={containerRef} apiBaseUrl={props.apiBaseUrl} />
     </HadokuThemeRoot>
   )
 }
 
-function AppInner({ containerRef }: { containerRef: RefObject<HTMLElement | null> }) {
+function AppInner({
+  containerRef,
+  apiBaseUrl
+}: {
+  containerRef: RefObject<HTMLElement | null>
+  apiBaseUrl?: string
+}) {
   const { isDarkTheme, isThemeReady, isInitialThemeLoad } = useHadokuTheme()
+
+  const client = useMemo(() => createClient(apiBaseUrl ?? DEFAULT_API_BASE), [apiBaseUrl])
+  const [route, navigate] = useRoute()
+  const [creating, setCreating] = useState(false)
+
+  // Read once per mount rather than per render: the tier cannot change without
+  // a page load, and re-reading localStorage in a render path is noise.
+  const canAuthor = useMemo(canAuthorNow, [])
+  const syncEnabled = useMemo(hasIdentity, [])
+
+  const { prefs, save } = usePrefs(studyPrefs)
+  const shuffle = prefs?.shuffle ?? false
+
+  const openSet = useCallback((setId: string) => navigate({ setId, drilling: false }), [navigate])
+  const goHome = useCallback(() => {
+    setCreating(false)
+    navigate({ setId: null, drilling: false })
+  }, [navigate])
 
   // Gate the first paint so the theme is applied before anything renders.
   if (isInitialThemeLoad && !isThemeReady) {
     return <LoadingSkeleton isDarkTheme={isDarkTheme} />
   }
 
+  // Drilling takes the whole screen. The header's controls are worth their space
+  // everywhere else, but a phone studying flashcards should spend every pixel on
+  // the card and on the two buttons under a thumb.
+  const fullscreen = route.setId !== null && route.drilling
+
   return (
     <main
       ref={containerRef}
       className="study-container"
       data-dark-theme={isDarkTheme ? 'true' : 'false'}
+      data-fullscreen={fullscreen ? 'true' : 'false'}
     >
       <div className="study">
-        {/*
-          The ecosystem header. It renders the theme picker AND the settings gear
-          itself — neither is a prop, so every app gets the same controls.
-
-          Your app's own preferences go in `children`, where they appear inside
-          the settings popout beneath the four canonical rows (access tier,
-          display name, content visibility, access key). That slot is
-          unconstrained; what it cannot do is change the rows above it.
-        */}
-        <AppHeader title="Study" />
+        {!fullscreen && (
+          <AppHeader title="Study">
+            <label className="pref-row">
+              <input
+                type="checkbox"
+                checked={shuffle}
+                onChange={e => void save({ shuffle: e.target.checked })}
+              />
+              <span>Shuffle cards when studying</span>
+            </label>
+          </AppHeader>
+        )}
 
         <section className="study__content">
-          <p>Your app goes here.</p>
+          {creating ? (
+            <Editor
+              client={client}
+              existing={null}
+              onSaved={set => {
+                setCreating(false)
+                openSet(set.id)
+              }}
+              onCancel={() => setCreating(false)}
+            />
+          ) : route.setId !== null ? (
+            <SetPage
+              client={client}
+              setId={route.setId}
+              drilling={route.drilling}
+              syncEnabled={syncEnabled}
+              shuffle={shuffle}
+              onStartDrill={() => navigate({ setId: route.setId, drilling: true })}
+              onLeaveDrill={() => navigate({ setId: route.setId, drilling: false })}
+              onBack={goHome}
+              onDeleted={goHome}
+            />
+          ) : (
+            <Gallery
+              client={client}
+              canAuthor={canAuthor}
+              onOpen={openSet}
+              onCreate={() => setCreating(true)}
+            />
+          )}
         </section>
       </div>
     </main>

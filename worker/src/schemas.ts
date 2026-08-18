@@ -1,90 +1,157 @@
 /**
- * Zod schemas for OpenAPI spec generation
- *
- * These define the request/response shapes for all API endpoints.
- * Uses @wolffm/worker-utils for shared schema patterns.
+ * Zod schemas for OpenAPI spec generation.
  */
 
 import { z } from '@hono/zod-openapi';
+import { DetailedErrorResponseSchema, createSuccessResponseSchema } from '@wolffm/worker-utils';
 import {
-	DetailedErrorResponseSchema,
-	createSuccessResponseSchema,
-} from '@wolffm/worker-utils';
-
-// ============================================================================
-// Re-export shared schemas
-// ============================================================================
+	MAX_CARDS_PER_SET,
+	MAX_DESCRIPTION_LENGTH,
+	MAX_FIELD_LENGTH,
+	MAX_TITLE_LENGTH,
+} from './db.js';
 
 export const ErrorResponseSchema = DetailedErrorResponseSchema;
 
-// Custom health response for this worker
 export const HealthResponseSchema = z
 	.object({
 		status: z.enum(['healthy', 'degraded', 'unhealthy']),
 		service: z.literal('study-worker'),
 		timestamp: z.string(),
+		database: z.boolean().optional(),
 		version: z.string().optional(),
 	})
 	.openapi('HealthResponse');
 
-// Success wrapper helper
 export const SuccessResponseSchema = createSuccessResponseSchema;
 
 // ============================================================================
-// Example Entity Schemas (customize for your app)
+// Entities
 // ============================================================================
 
-export const ExampleItemSchema = z
+export const CardSchema = z
 	.object({
-		id: z.string().openapi({ example: 'item-123' }),
-		name: z.string().openapi({ example: 'Example Item' }),
-		description: z.string().nullable().openapi({ example: 'A sample item' }),
-		createdAt: z.string().openapi({ example: '2025-01-21T00:00:00.000Z' }),
-		updatedAt: z.string().openapi({ example: '2025-01-21T00:00:00.000Z' }),
+		id: z.string().openapi({ example: 'qvv7k2mfjxtd' }),
+		front: z.string().openapi({ example: 'кот' }),
+		back: z.string().openapi({ example: 'cat' }),
 	})
-	.openapi('ExampleItem');
+	.openapi('Card');
 
-// ============================================================================
-// Response Schemas
-// ============================================================================
-
-export const ExampleItemsResponseSchema = SuccessResponseSchema(
-	z.object({
-		items: z.array(ExampleItemSchema),
-	})
-).openapi('ExampleItemsResponse');
-
-export const ExampleItemResponseSchema = SuccessResponseSchema(
-	z.object({
-		item: ExampleItemSchema,
-	})
-).openapi('ExampleItemResponse');
-
-// ============================================================================
-// Request Schemas
-// ============================================================================
-
-export const CreateExampleItemInputSchema = z
+/**
+ * A set as the API returns it.
+ *
+ * `isOwner` is the client's cue for whether to offer edit/publish controls. It
+ * is a CONVENIENCE, never the seal — the worker re-derives ownership from the
+ * edge-injected userId on every write, so a client that flips this flag gains
+ * nothing.
+ */
+export const SetSchema = z
 	.object({
-		name: z.string().min(1).openapi({ example: 'New Item' }),
-		description: z.string().optional().openapi({ example: 'Item description' }),
+		id: z.string().openapi({ example: 'qvv7k2mfjxtd' }),
+		title: z.string().openapi({ example: 'Russian — animals' }),
+		description: z.string().nullable().openapi({ example: 'First 40 nouns' }),
+		published: z.boolean().openapi({ example: false }),
+		cardCount: z.number().int().openapi({ example: 40 }),
+		isOwner: z.boolean().openapi({ example: true }),
+		createdAt: z.string().openapi({ example: '2026-08-18T00:00:00.000Z' }),
+		updatedAt: z.string().openapi({ example: '2026-08-18T00:00:00.000Z' }),
 	})
-	.openapi('CreateExampleItemInput');
+	.openapi('Set');
 
-export const UpdateExampleItemInputSchema = z
+export const SetDetailSchema = SetSchema.extend({
+	cards: z.array(CardSchema),
+}).openapi('SetDetail');
+
+/**
+ * A pass's resume bookmark.
+ *
+ * `results` maps cardId -> a RESULT STRING. Deliberately not a boolean: v2
+ * judges typed answers with an LLM and needs a third verdict, and widening a
+ * string union is not a migration.
+ */
+export const ProgressSchema = z
 	.object({
-		name: z.string().optional().openapi({ example: 'Updated Item' }),
-		description: z.string().nullable().optional().openapi({ example: 'Updated description' }),
+		queue: z.array(z.string()).openapi({ example: ['qvv7k2mfjxtd'] }),
+		results: z
+			.record(z.string(), z.enum(['got', 'missed']))
+			.openapi({ example: { qvv7k2mfjxtd: 'got' } }),
+		updatedAt: z.string().openapi({ example: '2026-08-18T00:00:00.000Z' }),
 	})
-	.openapi('UpdateExampleItemInput');
+	.openapi('Progress');
 
 // ============================================================================
-// Delete Response
+// Inputs
 // ============================================================================
 
-export const DeleteResponseSchema = SuccessResponseSchema(
-	z.object({
-		deleted: z.literal(true),
-		id: z.string(),
+const cardInput = z.object({
+	front: z.string().trim().min(1).max(MAX_FIELD_LENGTH),
+	back: z.string().trim().min(1).max(MAX_FIELD_LENGTH),
+});
+
+export const CreateSetInputSchema = z
+	.object({
+		title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
+		description: z.string().trim().max(MAX_DESCRIPTION_LENGTH).nullable().optional(),
+		/** Optional so a paste-import lands as one request rather than two. */
+		cards: z.array(cardInput).max(MAX_CARDS_PER_SET).optional(),
 	})
-).openapi('DeleteResponse');
+	.openapi('CreateSetInput');
+
+export const UpdateSetInputSchema = z
+	.object({
+		title: z.string().trim().min(1).max(MAX_TITLE_LENGTH).optional(),
+		description: z.string().trim().max(MAX_DESCRIPTION_LENGTH).nullable().optional(),
+		published: z.boolean().optional(),
+	})
+	.openapi('UpdateSetInput');
+
+/**
+ * Cards are replaced WHOLESALE, never patched one at a time.
+ *
+ * A set is a few kB of text that the editor already holds in full, so a
+ * per-card PATCH API would buy nothing but a reorder/insert/delete protocol
+ * and the drift that comes with it. The write is one transaction: delete all,
+ * insert all.
+ */
+export const ReplaceCardsInputSchema = z
+	.object({
+		cards: z.array(cardInput).max(MAX_CARDS_PER_SET),
+	})
+	.openapi('ReplaceCardsInput');
+
+export const PutProgressInputSchema = z
+	.object({
+		queue: z.array(z.string()).max(MAX_CARDS_PER_SET),
+		results: z.record(z.string(), z.enum(['got', 'missed'])),
+	})
+	.openapi('PutProgressInput');
+
+// ============================================================================
+// Responses
+// ============================================================================
+
+export const SetsResponseSchema = SuccessResponseSchema(
+	z.object({ sets: z.array(SetSchema) })
+).openapi('SetsResponse');
+
+export const SetDetailResponseSchema = SuccessResponseSchema(
+	z.object({ set: SetDetailSchema })
+).openapi('SetDetailResponse');
+
+export const SetResponseSchema = SuccessResponseSchema(z.object({ set: SetSchema })).openapi(
+	'SetResponse'
+);
+
+export const CardsResponseSchema = SuccessResponseSchema(
+	z.object({ cards: z.array(CardSchema) })
+).openapi('CardsResponse');
+
+export const ProgressResponseSchema = SuccessResponseSchema(
+	z.object({ progress: ProgressSchema.nullable() })
+).openapi('ProgressResponse');
+
+export const DeleteResponseSchema = SuccessResponseSchema(z.object({ setId: z.string() })).openapi(
+	'DeleteResponse'
+);
+
+export type CardInput = z.infer<typeof cardInput>;

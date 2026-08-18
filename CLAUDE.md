@@ -5,6 +5,7 @@
 Push to `main` → `publish.yml` builds, bumps version, publishes `@wolffm/<app-id>` to GitHub Packages, then dispatches `packages_updated` to hadoku_site. There, `update-packages.yml` bumps the lockfile, rebuilds the MF bundle under `public/mf/<app-id>/`, regenerates `registry.json`, and commits. If any CF worker depends on the package, `deploy-workers.yml` runs `pnpm update "@wolffm/*" --latest` and redeploys. GitHub Pages serves the new bundle.
 
 Operational facts:
+
 - You only push to main; version bumping and parent notification are automated
 - `HADOKU_SITE_TOKEN` must be set in this repo's GH secrets (push via `python3 scripts/administration.py github-secrets`)
 - Workers always pull `--latest` at deploy time, independent of update-packages, so a worker never ships a stale bundle

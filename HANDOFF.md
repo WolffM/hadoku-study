@@ -79,7 +79,7 @@ client-supplied value and re-stamps the real one under the `X-Edge-Auth` seal.
 ### Tiers
 
 - **friend+** to create or modify a set.
-- **public** to read a *published* set.
+- **public** to read a _published_ set.
 - A private set is visible only to its owner.
 
 Gate with `requireMinTier` / `tierAtLeast` from `@wolffm/worker-utils`. Never
@@ -120,7 +120,7 @@ Private sets are protected by the gate, not by preview silence. No change needed
              github.event.pull_request.author_association)
   ```
   Guard on `author_association`, never on "is this a fork" — the latter also
-  blocks your own collaborators. And never *skip* the job on a guard: a skipped
+  blocks your own collaborators. And never _skip_ the job on a guard: a skipped
   required check never reports and leaves the PR unmergeable forever.
 - **Name your CI job `check`.** `hadoku-study` is seeded with `check` as its
   required status context in

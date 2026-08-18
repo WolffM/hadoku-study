@@ -15,8 +15,9 @@ module.exports = {
       {
         importFrom: [
           require.resolve('@wolffm/themes/style.css'),
-          // Add local CSS files that declare vars here, e.g.:
-          // require.resolve('./src/styles/base.css'),
+          // Declares --flip-card-commitment, the swipe-progress variable the
+          // pointer handler writes per-frame (see src/components/FlipCard.tsx).
+          require.resolve('./src/styles/index.css'),
         ],
       },
     ],

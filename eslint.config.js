@@ -10,6 +10,13 @@ export default [
     ignores: [
       '**/dist/**',
       '**/node_modules/**',
+      // Worktrees live at .claude/worktrees/<task> (see the working agreement),
+      // which is INSIDE the repo — so `eslint .` walks into them and lints
+      // another branch's files against THIS checkout's tsconfig. Every one of
+      // them then fails with "file was not found in any of the provided
+      // project(s)", which reads as a broken config rather than as a stray
+      // directory.
+      '.claude/worktrees/**',
       '**/coverage/**',
       '**/*.test.ts',
       '**/*.test.tsx',
