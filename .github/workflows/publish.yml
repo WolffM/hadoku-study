@@ -248,11 +248,35 @@ jobs:
           API_URL="https://api.github.com/repos/WolffM/hadoku_site/dispatches"
           AUTH_HEADER="Authorization: Bearer $HADOKU_SITE_TOKEN"
 
-          # Build packages array — always includes the UI package
-          PACKAGES="\"$PACKAGE_NAME\""
-          if [ -n "$WORKER_PACKAGE_NAME" ]; then
-            PACKAGES="$PACKAGES, \"$WORKER_PACKAGE_NAME\""
+          # Announce EXACTLY what was published, never what merely exists.
+          #
+          # This used to name the UI package unconditionally and the worker
+          # package whenever WORKER_PACKAGE_NAME was non-empty — neither of which
+          # is "did it publish". The consumer then tries to update a package that
+          # may not be on the registry at all, and hadoku_site's Update Packages
+          # dies with a 404 on `Fail on partial package update`.
+          #
+          # Fatal for a NEVER-published worker: hadoku-study's first publish
+          # shipped @wolffm/study and announced @wolffm/study-worker alongside it,
+          # so every study release reddened the parent until this was fixed
+          # (2026-08-18). For an already-published worker it was merely a wasted
+          # update of something that had not changed — same bug, quieter.
+          #
+          # Both `changed` outputs are exactly the conditions the publish steps
+          # above are gated on, so the dispatch cannot disagree with reality.
+          PACKAGES=""
+          if [ "${{ steps.ui_changed.outputs.changed }}" = "true" ]; then
+            PACKAGES="\"$PACKAGE_NAME\""
           fi
+          if [ -n "$WORKER_PACKAGE_NAME" ] && [ "${{ steps.worker_changed.outputs.changed }}" = "true" ]; then
+            [ -n "$PACKAGES" ] && PACKAGES="$PACKAGES, "
+            PACKAGES="$PACKAGES\"$WORKER_PACKAGE_NAME\""
+          fi
+          if [ -z "$PACKAGES" ]; then
+            echo "Nothing was published — no dispatch."
+            exit 0
+          fi
+
 
           # Dispatch packages_updated (triggers update-packages → deploy)
           echo "Dispatching packages_updated: [$PACKAGES]"
