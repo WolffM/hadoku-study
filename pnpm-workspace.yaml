@@ -1,0 +1,21 @@
+packages:
+  - '.'
+  - 'worker'
+
+# Dependency build-script approvals. pnpm 11.5+ reads this `allowBuilds` map
+# (package -> boolean); `pnpm install` fails with ERR_PNPM_IGNORED_BUILDS for
+# any dependency with a build script that isn't listed here.
+#
+# esbuild (pulled in by vite) needs its postinstall to fetch the platform
+# binary, so it must be approved. If a future dependency adds a build script,
+# the install will fail with a clear message — run `pnpm approve-builds` to
+# append it here.
+allowBuilds:
+  esbuild: true
+
+# @wolffm/* is the cross-ecosystem deploy path and must install immediately —
+# the host's global minimumReleaseAge would otherwise silently hold new @wolffm
+# majors back for 7 days. GLOB only: pinned `pkg@version` entries never match
+# in pnpm 11, so they rot the moment the next version publishes.
+minimumReleaseAgeExclude:
+  - '@wolffm/*'

@@ -1,0 +1,82 @@
+/**
+ * Theme System CSS
+ * Uses @wolffm/themes for consistent theming across all apps
+ *
+ * ACCESSIBILITY: All text colors must meet WCAG AA contrast (4.5:1).
+ * Use theme variables (--color-text, --color-text-secondary) which are
+ * pre-validated. Never hardcode colors — use theme tokens only.
+ */
+
+/* Light themes - explicit color scheme */
+.study-container[data-theme='light'],
+.study-container[data-theme='coffee-light'],
+.study-container[data-theme='nature-light'],
+.study-container[data-theme='lavender-light'],
+.study-container[data-theme='strawberry-light'],
+.study-container[data-theme='ocean-light'],
+.study-container[data-theme='cyberpunk-light'],
+.study-container[data-theme='pink-light'] {
+  color-scheme: light;
+}
+
+/* Dark themes - explicit color scheme, tells Dark Reader not to invert */
+.study-container[data-theme='dark'],
+.study-container[data-theme='coffee-dark'],
+.study-container[data-theme='nature-dark'],
+.study-container[data-theme='lavender-dark'],
+.study-container[data-theme='strawberry-dark'],
+.study-container[data-theme='ocean-dark'],
+.study-container[data-theme='cyberpunk-dark'],
+.study-container[data-theme='pink-dark'] {
+  color-scheme: dark only; /* "only" tells Dark Reader to leave it alone */
+}
+
+/* Dark Reader detection helper */
+.study-container[data-dark-theme='true'] {
+  --is-dark-theme: 1;
+}
+
+/* Main container.
+ * NO var(--x, #hex) fallbacks anywhere in this file: a fallback renders the
+ * hardcoded value, so a broken/renamed token looks fine in one theme and
+ * silently breaks in the other seventeen (ecosystem hard rule — see
+ * hadoku_site CLAUDE.md "Colors"). If a token doesn't resolve, that's a bug
+ * to surface, not to paper over. */
+.study-container {
+  min-height: 100vh;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .study-container {
+    transition: none;
+  }
+}
+
+.study {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+/* NOTE: no header styles here — AppHeader (from @wolffm/task-ui-components)
+ * owns the header markup AND its styling via the app-header.css import in
+ * entry.tsx. Local header rules were dead weight that drifted. */
+
+.study__content {
+  padding: 1rem;
+  background-color: var(--color-bg-card);
+  border-radius: var(--hdk-radius);
+  box-shadow: var(--hdk-shadow-sm);
+}
+
+.study__content p {
+  margin: 0.5rem 0;
+  color: var(--color-text-secondary);
+  font-size: var(--hdk-text-base);
+  line-height: 1.625;
+}
