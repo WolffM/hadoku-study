@@ -142,9 +142,12 @@ export function FlipCard({ front, back, flipped, onFlip, onGrade }: FlipCardProp
     >
       <div className="flip-card__inner">
         {/*
-          Both faces render at all times and share one grid cell. `aria-hidden`
-          plus `visibility` keeps the hidden face out of the accessibility tree
-          and out of tab order while it still contributes its height.
+          Both faces render at all times and share one grid cell, so the card is
+          always as tall as its taller face. The hidden one is hidden VISUALLY by
+          `backface-visibility` — it is still laid out, which is the whole point
+          — and hidden from screen readers by `aria-hidden`. Neither carries
+          `display`/`visibility: hidden`, because either would collapse the
+          height this arrangement exists to reserve.
         */}
         <div className="flip-card__face flip-card__face--front" aria-hidden={flipped}>
           <p className="flip-card__text">{front}</p>
