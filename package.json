@@ -35,7 +35,7 @@
     "prepare": "git config core.hooksPath .husky 2>/dev/null || true"
   },
   "peerDependencies": {
-    "@wolffm/themes": ">=5.7.3",
+    "@wolffm/themes": ">=5.7.6",
     "@wolffm/task-ui-components": ">=4.7.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -46,7 +46,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@wolffm/themes": "^5.7.3",
+    "@wolffm/themes": "^5.7.6",
     "@wolffm/task-ui-components": "^4.7.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
