@@ -32,7 +32,9 @@
     "lint:css": "stylelint \"src/**/*.css\"",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
-    "prepare": "git config core.hooksPath .husky 2>/dev/null || true"
+    "prepare": "git config core.hooksPath .husky 2>/dev/null || true",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "pnpm lint && pnpm lint:css && pnpm typecheck && pnpm build"
   },
   "peerDependencies": {
     "@wolffm/themes": ">=5.7.6",
