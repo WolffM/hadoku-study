@@ -1,31 +1,46 @@
 # @wolffm/study
 
-Flashcard creation and spaced study goes here.
+Flashcard sets you create, publish, and drill. Live at
+[hadoku.me/study](https://hadoku.me/study).
 
-## Overview
+Text-only. A set is owned by a user and private by default; publishing it is a
+per-set flag that lets anyone — signed in or not — read and study the same rows.
+Studying is honor-system: the card flips and you self-grade.
 
-Brief description of what this child app does and how it integrates with the hadoku parent site.
+`HANDOFF.md` is the map — architecture, the access model, and why the drill loop
+is built the way it is. Read it before changing anything in `src/state/` or the
+worker.
+
+## Layout
+
+| Path      | What                                                            |
+| --------- | --------------------------------------------------------------- |
+| `src/`    | the micro-frontend (`@wolffm/study`)                            |
+| `worker/` | the API (`@wolffm/study-worker`), running on D1 at `/study/api` |
+
+The host worker and the D1 migrations live in the parent repo, under
+`../hadoku_site/workers/study-api/`.
 
 ## Development
 
 ```bash
-# Install dependencies
 pnpm install
+pnpm dev      # vite dev server against index.html
+pnpm check    # lint + stylelint + typecheck + build, UI AND worker
+```
 
-# Start dev server
-pnpm dev
+`pnpm check` is the gate CI runs, and `check` is this repo's required status
+context. Run it the way CI does before pushing, not the way your shell is warmed
+up:
 
-# Build for production
-pnpm build
-
-# Lint and format
-pnpm lint:fix
-pnpm format
+```bash
+rm -rf node_modules && pnpm install --frozen-lockfile && pnpm check
 ```
 
 ### Logging
 
-**Important**: Use the logger from `@wolffm/task-ui-components` instead of `console.log`:
+Use the platform logger rather than `console.log` — it is routed and redacted,
+and its output is only visible in dev or to an admin.
 
 ```typescript
 import { logger } from '@wolffm/logger/client'
@@ -34,47 +49,30 @@ logger.info('Message', { key: 'value' })
 logger.error('Error occurred', error)
 ```
 
-Available methods: `logger.info()`, `logger.error()`, `logger.warn()`, `logger.debug()`
-
-Logs are only visible in dev mode or when authenticated as admin.
-
 ## Integration
 
-This app is a child component of the [hadoku_site](https://github.com/WolffM/hadoku_site) parent application.
-
-### Props
+This app mounts into [hadoku_site](https://github.com/WolffM/hadoku_site), which
+supplies React, the theme system and the prefs client through the page's import
+map. Everything in that map is externalized here — see `vite.config.ts`, and the
+"Hard constraints" section of `HANDOFF.md` for what happens when it is not.
 
 ```typescript
-interface StudyProps {
-  theme?: string // 'light', 'dark', 'coffee-dark', etc.
+export interface StudyProps {
+  /** Theme name, passed by the host (e.g. 'ocean-dark'). */
+  theme?: string
+  /** API base, injected from the MF registry. Defaults to '/study/api'. */
+  apiBaseUrl?: string
 }
-```
 
-### Mounting
-
-```typescript
 import { mount, unmount } from '@wolffm/study'
 
-// Mount the app
-mount(document.getElementById('app-root'), {
-  theme: 'ocean-dark'
-})
-
-// Unmount when done
+mount(document.getElementById('app-root'), { theme: 'ocean-dark' })
 unmount(document.getElementById('app-root'))
 ```
 
-## Deployment
+### Theming
 
-Pushes to `main` automatically:
-
-1. Build and publish to GitHub Packages
-2. Notify parent site to update
-3. Parent pulls new version and redeploys
-
-## Theme Integration
-
-Use CSS variables from `@wolffm/themes` for all colors:
+Colors come from `@wolffm/themes` tokens, never hex:
 
 ```css
 background-color: var(--color-bg);
@@ -82,9 +80,16 @@ color: var(--color-text);
 border-color: var(--color-border);
 ```
 
-Set theme attributes in your root component:
+**Do not set `data-theme` by hand.** `<HadokuThemeRoot>` owns the theme, its
+persistence and the picker, and mirrors the attribute onto the mount subtree
+itself — an app that also writes it fights the provider. Pass it a
+`containerRef` and let it do the work; `src/App.tsx` shows the shape.
 
-```typescript
-containerRef.current?.setAttribute('data-theme', theme)
-containerRef.current?.setAttribute('data-dark-theme', isDarkTheme ? 'true' : 'false')
-```
+## Deployment
+
+Push to `main`. CI bumps and publishes whichever packages actually changed, then
+notifies the parent site, which rebuilds the bundle under `public/mf/study/` and
+redeploys.
+
+Two things are **not** automatic — D1 migrations, and any new binding or secret
+on the worker. `HANDOFF.md` § "Shipping a change" has the commands.
