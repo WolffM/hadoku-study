@@ -49,6 +49,24 @@ D1 headroom is not a concern — the account is on Workers Paid (1 TB total,
 10 GB/database) and currently uses ~1 GB across 12 databases. A million cards is
 roughly 200 MB. Do not add a caching layer for size reasons.
 
+### The D1 database does not exist yet
+
+`../hadoku_site/workers/study-api/wrangler.toml` ships with the `[[d1_databases]]`
+block **commented out**, because a scaffold cannot invent a `database_id`. You
+create it:
+
+```bash
+cd ../hadoku_site
+pnpm --filter study-api exec wrangler d1 create study-db
+```
+
+then uncomment the block with the returned id and binding `STUDY_DB`, and add a
+`migrations/` directory. The worker currently deploys as a stub that answers
+`503 {"error":"Not deployed yet"}` on every path — verified live at
+`hadoku.me/study/api/health`, so the route binding and edge wiring are already
+confirmed working. Replacing that stub is your job; the header comment in
+`src/index.ts` shows the shape it expects.
+
 ### Identity
 
 Rows bind to the **registry `userId`** that edge-router injects as `X-User-Id`,
