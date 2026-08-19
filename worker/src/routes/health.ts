@@ -9,6 +9,7 @@
 import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
 import { HealthResponseSchema } from '../schemas.js';
 import type { AppEnv } from '../types.js';
+import { OPTIONAL_AUTH } from '../security.js';
 
 interface RouteContext {
 	Bindings: AppEnv;
@@ -22,6 +23,7 @@ const healthRoute = createRoute({
 	tags: ['Health'],
 	summary: 'Health check',
 	description: 'Returns the health status of the Study API, including D1 reachability.',
+	security: OPTIONAL_AUTH,
 	responses: {
 		200: {
 			description: 'API is healthy',

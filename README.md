@@ -21,12 +21,72 @@ worker.
 The host worker and the D1 migrations live in the parent repo, under
 `../hadoku_site/workers/study-api/`.
 
+## A set is a single file
+
+`GET /study/api/sets/:id` returns the whole set, cards included, and the write
+endpoints strip fields they do not own instead of rejecting them — so what you
+export is a valid import body with nothing edited out. That is the property
+that makes a set portable, and `worker/src/schemas.test.ts` asserts it rather
+than trusting it.
+
+```json
+{
+  "title": "Russian — animals",
+  "description": "First 40 nouns",
+  "published": true,
+  "cards": [{ "front": "кот", "back": "cat" }]
+}
+```
+
+Only `title` and `cards` are required. On `PUT`, an omitted `published` leaves
+visibility **alone**: a file describes a set's content, so a hand-written one
+that never mentions publication must not be able to unshare a set.
+
+In the app, **Export file** is on every set you can read — including someone
+else's published set — and the editor's **Import a file** takes the same
+document back, plus a raw API response, a bare JSON array of cards, or a
+tab/comma-separated paste out of a spreadsheet.
+
+## Driving it from a script or an agent
+
+The spec is at
+[`/study/api/openapi.json`](https://hadoku.me/study/api/openapi.json) and is
+generated from the same zod schemas the handlers validate against, so it cannot
+drift from the implementation. Point a client generator at it.
+
+Authenticate with `X-User-Key: <your hadoku key>`. edge-router resolves it to a
+registry user and re-stamps the request; sets bind to that userId, never to the
+key, so rotating a key keeps your sets. Reading a _published_ set needs no key
+at all.
+
+```bash
+KEY=...   # friend tier or above, needed for every write
+API=https://hadoku.me/study/api
+
+# browse what is public — no key
+curl -s $API/sets/published | jq '.data.sets[] | {id, title, cardCount}'
+
+# export
+curl -sH "X-User-Key: $KEY" $API/sets/$ID | jq .data.set > set.json
+
+# import as a NEW set — add '"published": true' to share it on create
+curl -sH "X-User-Key: $KEY" --json @set.json $API/sets
+
+# write an edited file back over the SAME set: metadata and every card, one
+# request, one D1 transaction
+curl -sX PUT -H "X-User-Key: $KEY" --json @set.json $API/sets/$ID
+```
+
+`PATCH /sets/:id` is the partial alternative — rename, re-describe, or flip
+`published` without touching cards.
+
 ## Development
 
 ```bash
 pnpm install
 pnpm dev      # vite dev server against index.html
-pnpm check    # lint + stylelint + typecheck + build, UI AND worker
+pnpm test     # vitest, UI and worker
+pnpm check    # lint + stylelint + typecheck + test + build, UI AND worker
 ```
 
 `pnpm check` is the gate CI runs, and `check` is this repo's required status

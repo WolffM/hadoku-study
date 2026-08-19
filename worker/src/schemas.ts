@@ -88,14 +88,53 @@ const cardInput = z.object({
 	back: z.string().trim().min(1).max(MAX_FIELD_LENGTH),
 });
 
+/**
+ * A whole set as a single importable document — THE file format.
+ *
+ * This is deliberately a subset of what `GET /sets/{id}` returns, and zod
+ * strips unknown keys rather than rejecting them, so the export IS the import:
+ * the `set` object from a GET can be POSTed back verbatim, server-owned fields
+ * (`id`, `isOwner`, `cardCount`, `createdAt`, `updatedAt`, and each card's
+ * `id`) and all. That property is the whole reason a set is portable as one
+ * file, so `schemas.round-trip.test.ts` asserts it rather than leaving it to
+ * be broken silently by a stray `.strict()`.
+ */
 export const CreateSetInputSchema = z
 	.object({
 		title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
 		description: z.string().trim().max(MAX_DESCRIPTION_LENGTH).nullable().optional(),
 		/** Optional so a paste-import lands as one request rather than two. */
 		cards: z.array(cardInput).max(MAX_CARDS_PER_SET).optional(),
+		/**
+		 * Publish on create, so importing an already-public set is one request
+		 * rather than a POST followed by a PATCH. Omitted means private, which
+		 * is the same default a set created in the UI gets.
+		 */
+		published: z.boolean().optional(),
 	})
 	.openapi('CreateSetInput');
+
+/**
+ * The body of `PUT /sets/{id}` — the same file, written over an existing set.
+ *
+ * `cards` is REQUIRED here where it is optional on create: a PUT states the
+ * set's whole content, and letting it be omitted would make "replace this set"
+ * and "leave the deck alone" indistinguishable.
+ *
+ * `published` omitted means LEAVE VISIBILITY ALONE, not "make private". A file
+ * describes a set's CONTENT; publication is access control on the row, not
+ * content, so a hand-written file that never mentions it must not silently
+ * unshare someone's set. An exported file always carries the flag, so a true
+ * round trip is still lossless.
+ */
+export const ReplaceSetInputSchema = z
+	.object({
+		title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
+		description: z.string().trim().max(MAX_DESCRIPTION_LENGTH).nullable().optional(),
+		cards: z.array(cardInput).max(MAX_CARDS_PER_SET),
+		published: z.boolean().optional(),
+	})
+	.openapi('ReplaceSetInput');
 
 export const UpdateSetInputSchema = z
 	.object({

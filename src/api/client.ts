@@ -93,9 +93,36 @@ export function createClient(base: string) {
     getSet: (id: string) =>
       request<{ set: StudySetDetail }>(trimmed, `/sets/${encodeURIComponent(id)}`).then(d => d.set),
 
-    createSet: (input: { title: string; description?: string | null; cards?: CardInput[] }) =>
+    createSet: (input: {
+      title: string
+      description?: string | null
+      cards?: CardInput[]
+      published?: boolean
+    }) =>
       request<{ set: StudySetDetail }>(trimmed, '/sets', {
         method: 'POST',
+        body: JSON.stringify(input)
+      }).then(d => d.set),
+
+    /**
+     * Write a whole set — metadata and every card — in ONE request.
+     *
+     * The editor holds the complete set, so saving it as a PATCH followed by a
+     * card PUT would put a set on the wire in two pieces that can half-land:
+     * the rename succeeds, the deck write fails, and the set is left claiming
+     * to be something it is not. The worker does both in one D1 transaction.
+     */
+    replaceSet: (
+      id: string,
+      input: {
+        title: string
+        description?: string | null
+        cards: CardInput[]
+        published?: boolean
+      }
+    ) =>
+      request<{ set: StudySetDetail }>(trimmed, `/sets/${encodeURIComponent(id)}`, {
+        method: 'PUT',
         body: JSON.stringify(input)
       }).then(d => d.set),
 
@@ -110,13 +137,6 @@ export function createClient(base: string) {
 
     deleteSet: (id: string) =>
       request<{ setId: string }>(trimmed, `/sets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-
-    replaceCards: (id: string, cards: CardInput[]) =>
-      request<{ cards: StudySetDetail['cards'] }>(
-        trimmed,
-        `/sets/${encodeURIComponent(id)}/cards`,
-        { method: 'PUT', body: JSON.stringify({ cards }) }
-      ).then(d => d.cards),
 
     getProgress: (id: string) =>
       request<{ progress: StoredProgress | null }>(

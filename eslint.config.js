@@ -20,7 +20,11 @@ export default [
       '**/coverage/**',
       '**/*.test.ts',
       '**/*.test.tsx',
-      '**/vite.config.ts'
+      // Build/test config files sit outside every tsconfig `include`, so the
+      // type-checked rules cannot resolve them and report the config itself as
+      // broken.
+      '**/vite.config.ts',
+      '**/vitest.config.ts'
     ]
   },
 

@@ -412,6 +412,14 @@
   margin-block: var(--hdk-space-sm);
 }
 
+/* Available to anyone who can read the set — a reader of a published set can
+   take a copy and copy the link, both of which need no ownership. */
+.set-page__share {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hdk-space-sm);
+}
+
 .set-page__owner {
   display: flex;
   flex-wrap: wrap;
@@ -452,6 +460,17 @@
 .editor__heading {
   margin: 0;
   font-size: var(--hdk-text-md);
+}
+
+.editor__import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hdk-space-sm);
+}
+
+.editor__imported {
+  margin: 0;
+  font-size: var(--hdk-text-sm);
 }
 
 .editor__bulk {

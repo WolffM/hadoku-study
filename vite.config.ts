@@ -3,6 +3,19 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  // Dev only — the built bundle is mounted by hadoku_site, which serves
+  // /study/api from the same origin. Without this, `pnpm dev` cannot reach the
+  // API at all and every view renders its error state, which makes the harness
+  // useless for anything but static layout. Reads of published sets work
+  // signed-out; writes need a session the dev server does not have.
+  server: {
+    proxy: {
+      '/study/api': {
+        target: 'https://hadoku.me',
+        changeOrigin: true
+      }
+    }
+  },
   build: {
     lib: {
       entry: 'src/entry.tsx',

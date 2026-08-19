@@ -98,6 +98,64 @@ a shared set require an account.
 Progress is gated on **identity, not tier**: it is private data about a set the
 caller can already read. Signed-out readers keep their place on the device.
 
+## A set is one file, and that is load-bearing
+
+Sets move between the app, a script and an agent as a single JSON document, and
+the format is not a second schema to keep in sync — it is a SUBSET of what
+`GET /sets/:id` already returns:
+
+```json
+{
+  "title": "...",
+  "description": "...",
+  "published": true,
+  "cards": [{ "front": "...", "back": "..." }]
+}
+```
+
+The round trip works because zod **strips** unknown keys rather than rejecting
+them, so an exported set — `id`, `isOwner`, `cardCount`, per-card `id` and all —
+parses as a create or replace body untouched. That is a zod DEFAULT, not a
+decision anyone wrote in the schema, so a single `.strict()` added for tidiness
+would break every import with a validation error and no other signal.
+`worker/src/schemas.test.ts` exists to be that signal. Do not delete it, and do
+not make the input schemas strict.
+
+`PUT /sets/:id` writes a whole file back — title, description and every card in
+one D1 batch. It exists because the editor previously saved as PATCH → card PUT
+→ re-GET: three round trips, and a window in which a set had the new title and
+the old deck. Cards are still replaceable on their own via `PUT /sets/:id/cards`
+for callers that only have a deck.
+
+`published` is the one field a PUT treats as "leave alone" when omitted, because
+it is access control on the row rather than content. A hand-written file that
+never mentions publication must not be able to silently unshare a set. Export
+always writes it, so a true round trip is still lossless.
+
+## The OpenAPI spec is the agent interface
+
+Served at `/study/api/openapi.json`, generated from the same zod schemas the
+handlers validate against, so it cannot drift from the implementation. It is
+the reason there is no MCP server here: an MCP for one app would be a second
+auth path and a second lifecycle wrapping the same eleven endpoints, and the
+fleet-level version of that idea would be built on these specs anyway.
+
+Two things about it are asserted in `worker/src/spec.test.ts` because both
+shipped broken and stayed broken for months — a wrong spec breaks nobody's
+build, it breaks the next caller who trusts it:
+
+- **`servers[].url` carries the ORIGIN only.** Every path already includes the
+  `/study/api` prefix the worker mounts on, so a server URL that repeats it
+  makes generated clients request `/study/api/study/api/...` and 404 on their
+  first call. Fixed 2026-08-19.
+- **`securitySchemes` is declared**, and every operation carries a `security`
+  list. Without it the spec describes an API that appears to 403 for no stated
+  reason. `OPTIONAL_AUTH` starts with an empty requirement object — OpenAPI for
+  "reachable with no credentials" — which is what marks published sets readable
+  signed-out. Keep the two schemes as separate list entries: a list is OR, while
+  two keys in one object is AND, and merging them would tell every generated
+  client to send both headers on every call.
+
 ## Hard constraints
 
 - **Externalize the singletons.** React, `@wolffm/themes`,
@@ -127,8 +185,8 @@ caller can already read. Signed-out readers keep their place on the device.
 Work in a worktree, never the main checkout. Commit, don't stash — `refs/stash`
 is repo-global and will swallow other agents' files.
 
-`pnpm check` is the gate, and it covers the worker's typecheck and build as well
-as the UI's. Run it the way CI does before pushing, not the way your shell is
+`pnpm check` is the gate, and it covers the worker's typecheck, tests and build
+as well as the UI's. Run it the way CI does before pushing, not the way your shell is
 warmed up:
 
 ```bash

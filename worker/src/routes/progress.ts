@@ -24,6 +24,7 @@ import {
 	ProgressResponseSchema,
 	PutProgressInputSchema,
 } from '../schemas.js';
+import { AUTHENTICATED, OPTIONAL_AUTH } from '../security.js';
 import type { AppEnv } from '../types.js';
 
 interface RouteContext {
@@ -46,6 +47,7 @@ const getProgressRoute = createRoute({
 	summary: 'Your saved place in a set',
 	description:
 		'Null when there is nothing saved, and null for a signed-out caller — who has no server-side progress by definition, and is not an error.',
+	security: OPTIONAL_AUTH,
 	request: { params },
 	responses: {
 		200: {
@@ -95,6 +97,7 @@ const putProgressRoute = createRoute({
 	summary: 'Save your place in a set',
 	description:
 		'Upserts the caller’s bookmark. The client batches these — a write per graded card would be one round trip per flip, which is exactly the latency the drill loop is built to avoid.',
+	security: AUTHENTICATED,
 	request: {
 		params,
 		body: { content: { 'application/json': { schema: PutProgressInputSchema } }, required: true },
@@ -162,6 +165,7 @@ const deleteProgressRoute = createRoute({
 	tags: ['Progress'],
 	summary: 'Clear your saved place',
 	description: 'Called when a pass completes, and when the reader restarts a set from the top.',
+	security: AUTHENTICATED,
 	request: { params },
 	responses: {
 		200: {

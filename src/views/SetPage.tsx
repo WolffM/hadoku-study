@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, type StudyClient } from '../api/client'
 import type { StudySetDetail } from '../api/types'
+import { serializeSetFile, setFileName } from '../setFile'
 import { Drill } from './Drill'
 import { Editor } from './Editor'
 
@@ -91,6 +92,33 @@ export function SetPage({
         setBusy(false)
       })
   }, [client, confirmingDelete, onDeleted, set])
+
+  /**
+   * Download the set as one file.
+   *
+   * Offered to anyone who can READ the set, not just its owner: a reader of a
+   * published set already has every card on screen, so withholding the file
+   * would protect nothing and only stop people building on each other's decks.
+   * The file is the same document the API accepts back, so an export is a fork
+   * waiting to happen.
+   */
+  const exportFile = useCallback(() => {
+    if (!set) return
+    const url = URL.createObjectURL(new Blob([serializeSetFile(set)], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = setFileName(set.title)
+    // In the document, not just constructed: Firefox ignores a click on an
+    // anchor that was never attached, and silently downloads nothing.
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    // Revoked on a turn of the event loop rather than immediately: Safari has
+    // not started reading the blob by the time click() returns, and revoking
+    // synchronously gives it an empty file.
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
+  }, [set])
 
   const copyLink = useCallback(() => {
     const url = `${window.location.origin}${window.location.pathname}?set=${encodeURIComponent(setId)}`
@@ -199,6 +227,22 @@ export function SetPage({
         </button>
       </div>
 
+      <div className="set-page__share">
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          onClick={exportFile}
+          disabled={set.cards.length === 0}
+        >
+          Export file
+        </button>
+        {set.published && (
+          <button type="button" className="btn btn--ghost btn--sm" onClick={copyLink}>
+            {copied ? 'Link copied' : 'Copy link'}
+          </button>
+        )}
+      </div>
+
       {set.isOwner && (
         <div className="set-page__owner">
           <button
@@ -217,11 +261,6 @@ export function SetPage({
           >
             {set.published ? 'Make private' : 'Publish'}
           </button>
-          {set.published && (
-            <button type="button" className="btn btn--ghost btn--sm" onClick={copyLink}>
-              {copied ? 'Link copied' : 'Copy link'}
-            </button>
-          )}
           <button
             type="button"
             className="btn btn--danger-ghost btn--sm"

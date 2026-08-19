@@ -11,14 +11,12 @@
 
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import {
-	badRequestWrapped,
 	createdWrapped,
 	notFoundWrapped,
 	okWrapped,
 	type HadokuAuthContext,
 } from '@wolffm/worker-utils';
 import {
-	MAX_CARDS_PER_SET,
 	listCards,
 	listOwnedSets,
 	listPublishedSets,
@@ -34,12 +32,14 @@ import {
 	DeleteResponseSchema,
 	ErrorResponseSchema,
 	ReplaceCardsInputSchema,
+	ReplaceSetInputSchema,
 	SetDetailResponseSchema,
 	SetResponseSchema,
 	SetsResponseSchema,
 	UpdateSetInputSchema,
 	type CardInput,
 } from '../schemas.js';
+import { AUTHENTICATED, OPTIONAL_AUTH } from '../security.js';
 import type { AppEnv, CardRow, SetRow } from '../types.js';
 
 interface RouteContext {
@@ -86,14 +86,16 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 /**
- * Replace a set's cards and stamp the set as updated, as ONE batch.
+ * The statements that swap a set's whole deck — NOT run here.
  *
- * D1 runs a batch in an implicit transaction, so a failed insert cannot leave
- * the set holding a partial deck — which a delete-then-insert pair of separate
- * statements absolutely could, and the failure would be silent data loss on
- * someone's set.
+ * Returned rather than executed so a caller can put them in the SAME D1 batch
+ * as its own writes. `PUT /sets/{id}` replaces metadata and cards together and
+ * must not be able to land half of that; composing one batch is what makes the
+ * two atomic, since D1 runs a batch in an implicit transaction. A
+ * delete-then-insert pair of separate statements could leave a set holding a
+ * partial deck, and the failure would be silent data loss on someone's set.
  */
-function replaceCardsBatch(db: D1Database, setId: string, cards: CardInput[], now: number) {
+function cardReplacementStatements(db: D1Database, setId: string, cards: CardInput[]) {
 	const inserts = chunk(cards, INSERT_CHUNK).map((group, groupIndex) => {
 		const values = group.map((_, i) => {
 			const p = i * 5;
@@ -111,11 +113,27 @@ function replaceCardsBatch(db: D1Database, setId: string, cards: CardInput[], no
 			.bind(...bindings);
 	});
 
+	return [db.prepare(`DELETE FROM cards WHERE set_id = ?1`).bind(setId), ...inserts];
+}
+
+/** Swap a set's deck and stamp it as updated, as one transaction. */
+function replaceCardsBatch(db: D1Database, setId: string, cards: CardInput[], now: number) {
 	return db.batch([
-		db.prepare(`DELETE FROM cards WHERE set_id = ?1`).bind(setId),
-		...inserts,
+		...cardReplacementStatements(db, setId, cards),
 		db.prepare(`UPDATE sets SET updated_at = ?1 WHERE id = ?2`).bind(now, setId),
 	]);
+}
+
+/**
+ * Resolve a publish flag against what the set already is.
+ *
+ * Re-publishing an already-published set keeps the ORIGINAL published_at, so
+ * the gallery's ordering reflects when a set was first shared rather than the
+ * last time its owner toggled the switch. `undefined` leaves it untouched.
+ */
+function nextPublishedAt(current: number | null, published: boolean | undefined, now: number) {
+	if (published === undefined) return current;
+	return published ? (current ?? now) : null;
 }
 
 // ============================================================================
@@ -128,6 +146,7 @@ const listOwnRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'List your own sets',
 	description: 'Every set owned by the calling user, published or not. Requires friend access.',
+	security: AUTHENTICATED,
 	responses: {
 		200: {
 			description: 'Your sets',
@@ -159,6 +178,7 @@ const listPublishedRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'List published sets',
 	description: 'Every published set with at least one card. Public — no account needed.',
+	security: OPTIONAL_AUTH,
 	request: {
 		query: z.object({
 			limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -189,7 +209,8 @@ const createRouteDef = createRoute({
 	tags: ['Sets'],
 	summary: 'Create a set',
 	description:
-		'Creates a private set. Cards may be supplied inline so a paste-import lands in one request.',
+		'Import a whole set in one request — title, description and every card. This is the write half of the single-file format: the `set` object from `GET /sets/{id}` may be POSTed back verbatim, extra fields and all. Pass `published: true` to share it on create rather than following up with a PATCH.',
+	security: AUTHENTICATED,
 	request: {
 		body: { content: { 'application/json': { schema: CreateSetInputSchema } }, required: true },
 	},
@@ -214,13 +235,14 @@ app.openapi(createRouteDef, async (c) => {
 	const db = c.env.STUDY_DB;
 	const now = Date.now();
 	const id = newId();
+	const publishedAt = input.published === true ? now : null;
 
 	await db
 		.prepare(
 			`INSERT INTO sets (id, owner_user_id, title, description, published_at, created_at, updated_at)
-			 VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?5)`
+			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)`
 		)
-		.bind(id, writer.userId, input.title, input.description ?? null, now)
+		.bind(id, writer.userId, input.title, input.description ?? null, publishedAt, now)
 		.run();
 
 	const cards = input.cards ?? [];
@@ -231,7 +253,7 @@ app.openapi(createRouteDef, async (c) => {
 		owner_user_id: writer.userId,
 		title: input.title,
 		description: input.description ?? null,
-		published_at: null,
+		published_at: publishedAt,
 		created_at: now,
 		updated_at: now,
 	};
@@ -254,7 +276,8 @@ const getSetRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Get a set and all of its cards',
 	description:
-		'Returns the whole set in one response so the drill loop never needs a round trip between cards. Public when the set is published; otherwise owner-only.',
+		'Returns the whole set in one response so the drill loop never needs a round trip between cards, and so a set can be exported as one file. Public when the set is published; otherwise owner-only.',
+	security: OPTIONAL_AUTH,
 	request: { params: z.object({ id: z.string() }) },
 	responses: {
 		200: {
@@ -292,7 +315,8 @@ const updateSetRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Update a set',
 	description:
-		'Owner only. `published` is a per-set flag, not a separate copy — flipping it changes who may read the same rows.',
+		'Owner only, and a PARTIAL update — omitted fields are left alone, and cards are untouched. To write a whole set back from a file, use PUT instead. `published` is a per-set flag, not a separate copy: flipping it changes who may read the same rows.',
+	security: AUTHENTICATED,
 	request: {
 		params: z.object({ id: z.string() }),
 		body: { content: { 'application/json': { schema: UpdateSetInputSchema } }, required: true },
@@ -325,15 +349,7 @@ app.openapi(updateSetRoute, async (c) => {
 	const now = Date.now();
 	const title = patch.title ?? row.title;
 	const description = patch.description === undefined ? row.description : patch.description;
-	// Re-publishing an already-published set keeps the ORIGINAL published_at, so
-	// the gallery's ordering reflects when a set was first shared rather than
-	// the last time its owner toggled the switch.
-	const publishedAt =
-		patch.published === undefined
-			? row.published_at
-			: patch.published
-				? (row.published_at ?? now)
-				: null;
+	const publishedAt = nextPublishedAt(row.published_at, patch.published, now);
 
 	await db
 		.prepare(
@@ -357,6 +373,79 @@ app.openapi(updateSetRoute, async (c) => {
 });
 
 // ============================================================================
+// PUT /sets/:id — write a whole set back from a file
+// ============================================================================
+
+const replaceSetRoute = createRoute({
+	method: 'put',
+	path: '/sets/{id}',
+	tags: ['Sets'],
+	summary: 'Replace a whole set',
+	description:
+		'Owner only. The read half of the single-file format written back over an existing set: title, description and every card in ONE request, so a file that was exported, edited and re-imported does not need a PATCH and a card PUT to be sequenced by the caller. Metadata and cards land in a single transaction. Omitting `published` leaves visibility alone — a file describes content, and must not be able to silently unshare a set.',
+	security: AUTHENTICATED,
+	request: {
+		params: z.object({ id: z.string() }),
+		body: { content: { 'application/json': { schema: ReplaceSetInputSchema } }, required: true },
+	},
+	responses: {
+		200: {
+			description: 'Replaced',
+			content: { 'application/json': { schema: SetDetailResponseSchema } },
+		},
+		403: {
+			description: 'Not signed in, or below friend tier',
+			content: { 'application/json': { schema: ErrorResponseSchema } },
+		},
+		404: {
+			description: 'No such set — or not yours',
+			content: { 'application/json': { schema: ErrorResponseSchema } },
+		},
+	},
+});
+
+app.openapi(replaceSetRoute, async (c) => {
+	const writer = resolveWriter(c);
+	if (!writer.ok)
+		return c.json({ success: false, error: 'Forbidden', message: writer.message }, 403);
+
+	const { id } = c.req.valid('param');
+	const input = c.req.valid('json');
+	const db = c.env.STUDY_DB;
+
+	const row = await loadSetForWrite(db, id, writer.userId);
+	if (!row) return notFoundWrapped(c, 'Set');
+
+	const now = Date.now();
+	const description = input.description ?? null;
+	const publishedAt = nextPublishedAt(row.published_at, input.published, now);
+
+	// One batch, so a set can never be left holding the new title and the old
+	// deck. D1 wraps a batch in an implicit transaction; two awaited writes
+	// would not be, and the window between them is exactly where an import of
+	// someone's 500-card set would tear.
+	await db.batch([
+		...cardReplacementStatements(db, id, input.cards),
+		db
+			.prepare(
+				`UPDATE sets SET title = ?1, description = ?2, published_at = ?3, updated_at = ?4 WHERE id = ?5`
+			)
+			.bind(input.title, description, publishedAt, now, id),
+	]);
+
+	return okWrapped(c, {
+		set: {
+			...toSetJson(
+				{ ...row, title: input.title, description, published_at: publishedAt, updated_at: now },
+				input.cards.length,
+				writer.userId
+			),
+			cards: (await listCards(db, id)).map(toCardJson),
+		},
+	});
+});
+
+// ============================================================================
 // DELETE /sets/:id
 // ============================================================================
 
@@ -366,6 +455,7 @@ const deleteSetRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Delete a set',
 	description: 'Owner only. Cards and every reader’s saved progress go with it.',
+	security: AUTHENTICATED,
 	request: { params: z.object({ id: z.string() }) },
 	responses: {
 		200: {
@@ -417,6 +507,7 @@ const replaceCardsRoute = createRoute({
 	summary: 'Replace every card in a set',
 	description:
 		'Owner only. The editor holds the whole set already, so cards are written wholesale rather than patched one at a time.',
+	security: AUTHENTICATED,
 	request: {
 		params: z.object({ id: z.string() }),
 		body: { content: { 'application/json': { schema: ReplaceCardsInputSchema } }, required: true },
@@ -449,10 +540,6 @@ app.openapi(replaceCardsRoute, async (c) => {
 	const { id } = c.req.valid('param');
 	const { cards } = c.req.valid('json');
 	const db = c.env.STUDY_DB;
-
-	if (cards.length > MAX_CARDS_PER_SET) {
-		return badRequestWrapped(c, `A set holds at most ${MAX_CARDS_PER_SET} cards.`);
-	}
 
 	const row = await loadSetForWrite(db, id, writer.userId);
 	if (!row) return notFoundWrapped(c, 'Set');
