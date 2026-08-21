@@ -15,6 +15,19 @@
  * AA in 62 of 90 theme/family combinations.
  */
 
+/*
+ * `width: 100%` beside padding is the normal way to write a full-width block,
+ * and under content-box it silently overflows by exactly the padding — the
+ * board did, by 8px, giving the whole page a horizontal scroll and pushing its
+ * last column and the score off the right edge. Nothing in this file set
+ * box-sizing at all, so that trap was armed for every component.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 /* Light themes - explicit color scheme */
 .study-container[data-theme='light'],
 .study-container[data-theme='coffee-light'],
@@ -509,7 +522,11 @@
 .mode__name {
   font-size: var(--hdk-text-md);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-primary);
+  /* NOT --color-primary. An accent used as text sits on a card surface
+     unvalidated and misses AA in most themes — the same trap the
+     .btn--danger-ghost note below records. Weight and size carry the emphasis;
+     the tile's border and hover carry the affordance. */
+  color: var(--color-text);
 }
 
 .mode__blurb {
@@ -953,6 +970,21 @@
   display: flex;
   flex-direction: column;
   gap: var(--hdk-space-md);
+  /* The fullscreen container strips padding so the drill's card can own the
+     screen edge to edge (see [data-fullscreen] above). A grid of tap targets
+     cannot live like that: without this the outer tiles sit flush against the
+     viewport and the score clips off the right-hand side. */
+  padding: var(--hdk-space-md);
+  padding-block-end: max(var(--hdk-space-md), env(safe-area-inset-bottom));
+  /* A board is a fixed 5x5 shape, not a fluid layout. Stretched across a
+     desktop window its tiles become long letterboxes and it stops reading as a
+     board at all. */
+  width: 100%;
+  max-width: 46rem;
+  margin-inline: auto;
+  /* Full height so the stage above has something to centre within. `dvh`, not
+     `vh`, so a mobile browser's collapsing toolbar cannot crop the last row. */
+  min-height: 100dvh;
 }
 
 .board__bar {
@@ -979,6 +1011,16 @@
   color: var(--color-text-tertiary);
 }
 
+/* The play area, centred in whatever height the bar leaves. On a desktop the
+   grid otherwise sits against the header with the rest of the screen empty
+   below it; on a phone there is no spare height and this changes nothing. */
+.board__stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-md);
+  margin-block: auto;
+}
+
 .board__grid {
   display: grid;
   grid-template-columns: repeat(var(--board-columns, 5), minmax(0, 1fr));
@@ -1002,11 +1044,15 @@
   /* Taller than wide at phone widths, which keeps the tap target comfortably
      past the 44px minimum even when five columns share a narrow screen. */
   min-height: 3rem;
-  border: 1px solid var(--color-border);
+  border: 1px solid transparent;
   border-radius: var(--hdk-radius-sm);
-  background-color: var(--color-primary-bg);
-  color: var(--color-on-primary-bg);
-  font-size: var(--hdk-text-sm);
+  /* The FILL pair, not --color-primary-bg. That token is a subtle tint meant
+     for badges, and it left the tiles reading as empty outlines rather than as
+     the solid, pressable things a board is made of — in some themes barely
+     distinguishable from the page behind them. */
+  background-color: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: var(--hdk-text-md);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
@@ -1014,7 +1060,7 @@
 }
 
 .board__cell:hover:not(:disabled) {
-  background-color: var(--color-primary-hover);
+  background-color: var(--color-primary-dark);
 }
 
 .board__cell:active:not(:disabled) {
@@ -1033,14 +1079,14 @@
 /* A played tile stays in place and reads as spent, so the grid keeps its shape
    and you can see at a glance which column you have been avoiding. */
 .board__cell--got {
-  background-color: var(--color-success-bg);
-  color: var(--color-on-success-bg);
-  border-color: var(--color-success);
+  background-color: var(--color-success);
+  color: var(--color-on-success);
 }
 
 .board__cell--missed {
   background-color: var(--color-bg-alt);
   color: var(--color-text-tertiary);
+  border-color: var(--color-border);
 }
 
 .board__cell--empty {
@@ -1107,7 +1153,7 @@
   font-size: var(--hdk-text-md);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--color-primary);
+  color: var(--color-text);
 }
 
 .board__sheet-body {
@@ -1139,7 +1185,7 @@
   margin: 0;
   font-size: var(--hdk-text-lg);
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-text);
 }
 
 .board__detail {

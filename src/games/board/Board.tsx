@@ -130,62 +130,68 @@ export function Board({ set, onExit }: GameProps) {
         </p>
       </header>
 
-      <div
-        className="board__grid"
-        style={{ '--board-columns': board.categories.length } as React.CSSProperties}
-      >
-        {board.categories.map(category => (
-          <h2 key={`head-${category}`} className="board__category">
-            {category}
-          </h2>
-        ))}
+      {/* The bar stays at the top; everything in here is the play area, and it
+          centres in whatever height is left over. Without the wrapper the grid
+          sat against the header with the rest of a desktop screen empty below
+          it. */}
+      <div className="board__stage">
+        <div
+          className="board__grid"
+          style={{ '--board-columns': board.categories.length } as React.CSSProperties}
+        >
+          {board.categories.map(category => (
+            <h2 key={`head-${category}`} className="board__category">
+              {category}
+            </h2>
+          ))}
 
-        {TIERS.map(tier =>
-          board.categories.map(category => {
-            const clue = board.cells.get(category)?.get(tier)
-            if (!clue) {
+          {TIERS.map(tier =>
+            board.categories.map(category => {
+              const clue = board.cells.get(category)?.get(tier)
+              if (!clue) {
+                return (
+                  <span
+                    key={`${category}-${tier}`}
+                    className="board__cell board__cell--empty"
+                    aria-hidden="true"
+                  />
+                )
+              }
+              const outcome = outcomes[clue.card.id]
               return (
-                <span
-                  key={`${category}-${tier}`}
-                  className="board__cell board__cell--empty"
-                  aria-hidden="true"
-                />
+                <button
+                  key={clue.card.id}
+                  type="button"
+                  className={`board__cell${outcome ? ` board__cell--${outcome}` : ''}`}
+                  onClick={() => openClue(clue)}
+                  disabled={outcome !== undefined}
+                  aria-label={`${category}, ${pointsFor(tier)} points${outcome ? `, answered ${outcome}` : ''}`}
+                >
+                  {pointsFor(tier)}
+                </button>
               )
-            }
-            const outcome = outcomes[clue.card.id]
-            return (
-              <button
-                key={clue.card.id}
-                type="button"
-                className={`board__cell${outcome ? ` board__cell--${outcome}` : ''}`}
-                onClick={() => openClue(clue)}
-                disabled={outcome !== undefined}
-                aria-label={`${category}, ${pointsFor(tier)} points${outcome ? `, answered ${outcome}` : ''}`}
-              >
-                {pointsFor(tier)}
-              </button>
-            )
-          })
+            })
+          )}
+        </div>
+
+        {finished && (
+          <div className="board__done panel">
+            <p>
+              Board cleared — <strong>{score}</strong> of {board.maxScore}.
+            </p>
+            <button type="button" className="btn btn--primary btn--sm" onClick={restart}>
+              Play again
+            </button>
+          </div>
+        )}
+
+        {board.unplaced.length > 0 && (
+          <p className="muted board__note">
+            {board.unplaced.length} {board.unplaced.length === 1 ? 'card is' : 'cards are'} not on
+            the board. They are still in the deck when you study this set.
+          </p>
         )}
       </div>
-
-      {finished && (
-        <div className="board__done panel">
-          <p>
-            Board cleared — <strong>{score}</strong> of {board.maxScore}.
-          </p>
-          <button type="button" className="btn btn--primary btn--sm" onClick={restart}>
-            Play again
-          </button>
-        </div>
-      )}
-
-      {board.unplaced.length > 0 && (
-        <p className="muted board__note">
-          {board.unplaced.length} {board.unplaced.length === 1 ? 'card is' : 'cards are'} not on the
-          board. They are still in the deck when you study this set.
-        </p>
-      )}
 
       {open && (
         <div className="board__sheet" role="dialog" aria-modal="true" aria-label="Clue">
