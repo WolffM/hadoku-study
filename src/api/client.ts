@@ -7,6 +7,7 @@
  * here.
  */
 
+import { logger } from '@wolffm/logger/client'
 import { getSessionId } from './session'
 import type { CardInput, StoredProgress, StudySet, StudySetDetail } from './types'
 
@@ -51,16 +52,52 @@ function headers(): HeadersInit {
   return out
 }
 
+/**
+ * One call to the API, logged on the way out and the way back.
+ *
+ * The failure path is the point. Every caller of this turns a rejection into a
+ * message on screen and nothing else, so before this a 500 from the worker
+ * left no trace anywhere in the browser — the user saw "Could not save the
+ * set" and there was nothing to look at afterwards. `apiRequest`/`apiResponse`
+ * are the logger's own helpers, so these land as typed api events rather than
+ * as strings.
+ */
 async function request<T>(base: string, path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${base}${path}`, {
-    ...init,
-    credentials: 'same-origin',
-    headers: {
-      ...headers(),
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers
-    }
-  })
+  const method = init.method ?? 'GET'
+  const startedAt = performance.now()
+  logger.apiRequest(method, path)
+
+  let res: Response
+  try {
+    res = await fetch(`${base}${path}`, {
+      ...init,
+      credentials: 'same-origin',
+      headers: {
+        ...headers(),
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...init.headers
+      }
+    })
+  } catch (cause) {
+    // The request never completed — offline, DNS, a cancelled keepalive flush.
+    // Distinct from an error STATUS, and the only place it is distinguishable.
+    logger.error('Study API request failed to complete', {
+      method,
+      path,
+      durationMs: Math.round(performance.now() - startedAt),
+      cause: cause instanceof Error ? cause.message : String(cause)
+    })
+    throw new ApiError(0, 'Could not reach the server')
+  }
+
+  const durationMs = Math.round(performance.now() - startedAt)
+  // Only the successful half goes through `apiResponse`, because the helper
+  // escalates every non-2xx to ERROR — which is wrong here twice over: a 404
+  // is the DESIGNED answer for a private set and a 403 for a signed-out
+  // writer, and pairing it with the line below logged one event twice at two
+  // different levels. Failures are reported once, at a level that matches, by
+  // the block further down.
+  if (res.ok) logger.apiResponse(method, path, res.status, { durationMs })
 
   let body: WrappedOk<T> | WrappedErr | null = null
   try {
@@ -70,11 +107,23 @@ async function request<T>(base: string, path: string, init: RequestInit = {}): P
     // error page, or the 503 stub before the worker was deployed. Surface the
     // status rather than a JSON parse error, which would send whoever reads
     // the console looking in entirely the wrong place.
+    logger.error('Study API returned a non-JSON body', {
+      method,
+      path,
+      status: res.status,
+      durationMs
+    })
     throw new ApiError(res.status, `${res.status} ${res.statusText}`)
   }
 
   if (!res.ok || !body || body.success === false) {
     const err = body && body.success === false ? (body.message ?? body.error) : res.statusText
+    // A 403 or 404 here is usually the system working as designed — signed
+    // out, or a private set — so only a server fault is logged at error level.
+    // A wall of expected 404s would bury the ones that matter.
+    const context = { method, path, status: res.status, durationMs, message: err }
+    if (res.status >= 500) logger.error('Study API request failed', context)
+    else logger.warn('Study API request refused', context)
     throw new ApiError(res.status, err || 'Request failed')
   }
 

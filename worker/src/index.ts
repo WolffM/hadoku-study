@@ -28,6 +28,7 @@ import {
 	type HadokuAuthContext,
 } from '@wolffm/worker-utils';
 import { SECURITY_SCHEMES } from './security.js';
+import { logUnhandled } from './telemetry.js';
 import type { AppEnv } from './types.js';
 import { healthRoutes } from './routes/health.js';
 import { setRoutes } from './routes/sets.js';
@@ -167,7 +168,21 @@ function createApp() {
 
 	const { notFoundHandler, errorHandler } = createErrorHandlers('wrapped');
 	app.notFound(notFoundHandler);
-	app.onError(errorHandler);
+
+	// Log the cause BEFORE delegating. The shared handler console.errors the raw
+	// error, which Cloudflare captures, but as an unstructured line outside the
+	// logger — so it never reaches the platform pipeline and cannot be queried
+	// next to the request row it belongs to. The caller still gets the same
+	// deliberately vague 500; the detail is for us, not for them.
+	//
+	// This is the gap that made a D1 parameter-limit bug cost a bisection
+	// against production on 2026-08-21: the response said "an unexpected error
+	// occurred" and the underlying error, which names the problem outright, was
+	// nowhere a query could reach.
+	app.onError((err, c) => {
+		logUnhandled(c.req.method, c.req.path, err);
+		return errorHandler(err, c);
+	});
 
 	return app;
 }

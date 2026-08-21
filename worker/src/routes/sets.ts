@@ -40,6 +40,7 @@ import {
 	type CardInput,
 } from '../schemas.js';
 import { AUTHENTICATED, OPTIONAL_AUTH } from '../security.js';
+import { deckShape, setEvent } from '../telemetry.js';
 import type { AppEnv, CardRow, SetRow } from '../types.js';
 
 interface RouteContext {
@@ -332,6 +333,11 @@ app.openapi(createRouteDef, async (c) => {
 		updated_at: now,
 	};
 
+	setEvent('created', writer, id, {
+		published: publishedAt !== null,
+		...deckShape(cards),
+	});
+
 	return createdWrapped(c, {
 		set: {
 			...toSetJson(row, cards.length, writer.userId),
@@ -437,6 +443,15 @@ app.openapi(updateSetRoute, async (c) => {
 		.bind(id)
 		.first<{ n: number }>();
 
+	// Publishing is the state change worth being able to find later — it is the
+	// one that changes who may read the rows — so it is called out rather than
+	// left implicit in a generic "updated".
+	setEvent('updated', writer, id, {
+		published: publishedAt !== null,
+		visibilityChanged: (row.published_at !== null) !== (publishedAt !== null),
+		cards: count?.n ?? 0,
+	});
+
 	return okWrapped(c, {
 		set: toSetJson(
 			{ ...row, title, description, published_at: publishedAt, updated_at: now },
@@ -507,6 +522,11 @@ app.openapi(replaceSetRoute, async (c) => {
 			.bind(input.title, description, publishedAt, now, id),
 	]);
 
+	setEvent('replaced', writer, id, {
+		published: publishedAt !== null,
+		...deckShape(input.cards),
+	});
+
 	return okWrapped(c, {
 		set: {
 			...toSetJson(
@@ -567,6 +587,8 @@ app.openapi(deleteSetRoute, async (c) => {
 		db.prepare(`DELETE FROM sets WHERE id = ?1`).bind(id),
 	]);
 
+	setEvent('deleted', writer, id, { published: row.published_at !== null });
+
 	return okWrapped(c, { setId: id });
 });
 
@@ -619,6 +641,8 @@ app.openapi(replaceCardsRoute, async (c) => {
 	if (!row) return notFoundWrapped(c, 'Set');
 
 	await replaceCardsBatch(db, id, cards, Date.now());
+
+	setEvent('cards-replaced', writer, id, deckShape(cards));
 
 	return okWrapped(c, { cards: (await listCards(db, id)).map(toCardJson) });
 });

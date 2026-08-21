@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState, type RefObject } from 'react'
+import { logger } from '@wolffm/logger/client'
 import { AppHeader, LoadingSkeleton } from '@wolffm/task-ui-components'
 import { HadokuThemeRoot, useHadokuTheme } from '@wolffm/themes'
 import { usePrefs } from '@wolffm/prefs-client/react'
@@ -89,7 +90,13 @@ function AppInner({
               <input
                 type="checkbox"
                 checked={shuffle}
-                onChange={e => void save({ shuffle: e.target.checked })}
+                onChange={e => {
+                  // `preference()` is the logger's own helper for this, so a
+                  // settings change is a typed event rather than a log line
+                  // shaped like one.
+                  logger.preference('shuffle', e.target.checked)
+                  void save({ shuffle: e.target.checked })
+                }}
               />
               <span>Shuffle cards when studying</span>
             </label>

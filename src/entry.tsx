@@ -24,11 +24,14 @@ export function mount(el: HTMLElement, props: StudyProps = {}) {
   const root = createRoot(el)
   root.render(<App {...props} />)
   ;(el as StudyElement).__root = root
-  logger.info('[study] Mounted successfully', { theme: props.theme })
+  // `component()` rather than `info('[study] Mounted…')`: the helper stamps the
+  // event type the telemetry schema expects, so a mount is queryable as a
+  // lifecycle event instead of being a string someone has to grep for.
+  logger.component('mount', 'study', { theme: props.theme, apiBaseUrl: props.apiBaseUrl })
 }
 
 // Unmount function - called by parent to cleanup your app
 export function unmount(el: HTMLElement) {
   ;(el as StudyElement).__root?.unmount()
-  logger.info('[study] Unmounted successfully')
+  logger.component('unmount', 'study')
 }

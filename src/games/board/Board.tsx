@@ -17,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { logger } from '@wolffm/logger/client'
 import type { GameProps } from '../types'
 import { TIERS, buildBoard, pointsFor, type BoardClue } from './model'
 
@@ -50,6 +51,19 @@ export function Board({ set, onExit }: GameProps) {
 
   const playedCount = Object.keys(outcomes).length
   const finished = board.clueCount > 0 && playedCount === board.clueCount
+
+  // A completed board is the one thing here worth recording: it is the signal
+  // that someone actually PLAYED rather than opened and left, and no HTTP log
+  // can see it — the whole game runs client-side after the set is fetched.
+  useEffect(() => {
+    if (!finished) return
+    logger.event('study.board.completed', {
+      setId: set.id,
+      score,
+      maxScore: board.maxScore,
+      clues: board.clueCount
+    })
+  }, [board.clueCount, board.maxScore, finished, score, set.id])
 
   const openClue = useCallback((clue: BoardClue) => {
     setOpen(clue)
