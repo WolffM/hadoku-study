@@ -96,7 +96,7 @@ const listJson = (rows: SetWithCount[], viewerId: string | null) =>
 	rows.map((row) => toSetJson(row, row.card_count, viewerId));
 
 /** Columns bound per card row — keep in step with the INSERT below. */
-const CARD_COLUMNS = 7;
+export const CARD_COLUMNS = 7;
 
 /**
  * Serialize a card's attrs for storage.
@@ -114,14 +114,26 @@ function serializeAttrs(attrs: CardInput['attrs']): string | null {
 }
 
 /**
- * Rows per INSERT.
+ * D1's ceiling on bound parameters in ONE statement.
  *
- * Each row binds {@link CARD_COLUMNS} parameters, so 50 rows is 400 —
- * comfortably inside SQLite's 999-variable ceiling, and it turns a full
- * 500-card set into 12 statements rather than 502. One statement per card would
- * put the batch's size in the hands of whoever pasted the deck.
+ * 100, and emphatically NOT SQLite's 999 — which is what this file used to
+ * claim. The difference is invisible until a set crosses the line and every
+ * write of it 500s: with the five columns this table had at launch the break
+ * was at 20 cards, so it sat here unnoticed while the only sets in existence
+ * were smaller than that. Adding two columns moved the break to 14 and the
+ * first real 25-clue board found it immediately.
  */
-const INSERT_CHUNK = 50;
+export const D1_MAX_BOUND_PARAMS = 100;
+
+/**
+ * Rows per INSERT, DERIVED rather than chosen.
+ *
+ * Deriving it is the actual fix. A hand-picked constant has to be revisited by
+ * whoever next adds a column, silently breaks large sets when they forget, and
+ * gives no signal until someone writes a set past the new limit —
+ * `sets.chunking.test.ts` pins the arithmetic so the mistake cannot recur.
+ */
+export const INSERT_CHUNK = Math.floor(D1_MAX_BOUND_PARAMS / CARD_COLUMNS);
 
 function chunk<T>(items: T[], size: number): T[][] {
 	const out: T[][] = [];
