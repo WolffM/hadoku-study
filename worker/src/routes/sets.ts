@@ -304,17 +304,23 @@ app.openapi(createRouteDef, async (c) => {
 	const now = Date.now();
 	const id = newId();
 	const publishedAt = input.published === true ? now : null;
-
-	await db
-		.prepare(
-			`INSERT INTO sets (id, owner_user_id, title, description, published_at, created_at, updated_at)
-			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)`
-		)
-		.bind(id, writer.userId, input.title, input.description ?? null, publishedAt, now)
-		.run();
-
 	const cards = input.cards ?? [];
-	if (cards.length > 0) await replaceCardsBatch(db, id, cards, now);
+
+	// The set row and its cards go in ONE batch, so a create either lands whole
+	// or not at all. Writing them as two awaited statements left an empty,
+	// titled set behind whenever the card insert failed — which is exactly what
+	// a run of them did on 2026-08-21, when every import over 14 cards hit D1's
+	// parameter ceiling and the owner was left with debris they had to find and
+	// delete by hand.
+	await db.batch([
+		db
+			.prepare(
+				`INSERT INTO sets (id, owner_user_id, title, description, published_at, created_at, updated_at)
+				 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)`
+			)
+			.bind(id, writer.userId, input.title, input.description ?? null, publishedAt, now),
+		...cardReplacementStatements(db, id, cards),
+	]);
 
 	const row: SetRow = {
 		id,
