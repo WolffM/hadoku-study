@@ -132,6 +132,79 @@ it is access control on the row rather than content. A hand-written file that
 never mentions publication must not be able to silently unshare a set. Export
 always writes it, so a true round trip is still lossless.
 
+## Games, and the room left for more of them
+
+A set is played by a **game**. The drill and the board are both games, and
+neither is special-cased anywhere: `src/games/registry.ts` lists them, and the
+set page walks that list, asks each one whether this set can be played, and
+renders a button for the ones that say yes. Adding a mode is a directory under
+`src/games/` and one registry entry — no edits to the set page, the router, or
+the API schema.
+
+A game's `id` is three things at once, deliberately: its key in a card's
+`attrs` bag, its value in the `?play=` URL param, and its identity in the
+registry. One name means there is nowhere for the three to drift apart.
+
+### Cards carry a bag, not a column per game
+
+`cards` has two columns for this, doing different jobs:
+
+- **`detail`** is a real column because it is CROSS-CUTTING — an explanation
+  after the answer is wanted by the drill, the board, and every quiz mode
+  sketched so far. A field every mode uses belongs in the schema, typed and in
+  the spec, not buried in a bag.
+- **`attrs`** is a JSON object NAMESPACED BY GAME:
+  `{"board": {"category": "Places", "difficulty": 3}}`. A new game adds a key
+  rather than a column.
+
+The namespace is the point. Two games that both want `difficulty` would
+collide in a flat bag, and resolving that later is exactly the migration this
+column exists to avoid.
+
+Known namespaces are still **fully typed** in zod and published in the spec, so
+an agent generating a board reads a real schema rather than an opaque object.
+Unknown namespaces **round-trip untouched** — through the API, the file format,
+and the editor — so a game can be prototyped entirely in the client before the
+server knows it exists. Three consequences worth keeping:
+
+- The editor preserves other games' namespaces when it saves. Editing a card in
+  one mode must not quietly delete another mode's data.
+- Each game reads its own namespace through its own reader and validates as it
+  goes, because the bag passes anything through: a `board` key may be any shape
+  at all by the time it reaches the client. A card that cannot be read is
+  simply not a clue, and must never take the board down.
+- `attrs` is size-capped in the schema (`MAX_ATTRS_LENGTH`). Passing unknown
+  keys through unvalidated is what makes a cap necessary — without one the
+  column is an unbounded blob store any friend-tier caller can fill.
+
+### Playability is derived, never stored
+
+A set whose cards carry `attrs.board` can be played as a board; one whose cards
+do not is a plain deck. There is no `mode` column on `sets`, because that would
+be a second answer to a question the cards already answer, free to drift out of
+step with them. A deck that gets tagged later starts qualifying on its own,
+with no migration and no flag to keep in sync.
+
+The asymmetry runs one way and is deliberate: **every board is already a deck**,
+because a clue is a card with a front and a back. A deck becomes a board only
+once someone has done the authoring. Half-tagged sets are therefore a normal
+in-between state — untagged cards stay in the deck, sit off the grid, and the
+editor reports what is still missing rather than enforcing a silent threshold.
+
+### The board is built phone-first
+
+Not a polish pass. Measured on a 390x844 viewport: 25 tiles at 73x48 (past the
+44px tap minimum), the whole board inside 341px, no sideways scroll.
+
+- **A tile shows only its points.** That is what a real board does and what lets
+  25 targets fit a phone; the category names carry the meaning once, along the
+  top.
+- **The clue opens as a full-screen sheet**, not an inline panel, which on a
+  phone would put the answer below the fold.
+- **Actions are pinned to the bottom of the sheet**, so revealing the answer
+  grows the content ABOVE them and the buttons never move under a thumb already
+  travelling toward them. Same rule as the flip card, same reason.
+
 ## The OpenAPI spec is the agent interface
 
 Served at `/study/api/openapi.json`, generated from the same zod schemas the

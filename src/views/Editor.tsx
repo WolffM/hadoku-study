@@ -7,10 +7,11 @@
  * dance and the drift that comes with it.
  */
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { StudyClient } from '../api/client'
-import type { CardInput, StudySetDetail } from '../api/types'
+import type { CardInput, StudyCard, StudySetDetail } from '../api/types'
 import { SetFileError, parseImport } from '../setFile'
+import { BOARD_NAMESPACE, TIERS, missingForBoard, pointsFor, readBoardAttrs } from '../games/board'
 
 export interface EditorProps {
   client: StudyClient
@@ -24,28 +25,91 @@ interface Row extends CardInput {
   /** Stable across reorders and edits, so React never reuses one row's DOM for
    *  another's text — which is what makes an input lose its caret mid-word. */
   key: string
+  /** Narrowed from the optional/nullable API shape to what a controlled input
+   *  needs: empty string and null are the editor's "not set", and only become
+   *  undefined on the way out in `save`. */
+  category: string
+  difficulty: number | null
+  detail: string
+  /** Other games' namespaces, passed through untouched. The editor does not
+   *  know what they are and must not drop them. */
+  otherAttrs: Record<string, unknown>
 }
 
 let rowSeq = 0
-const newRow = (front = '', back = ''): Row => ({ key: `row-${rowSeq++}`, front, back })
+const newRow = (card: Partial<StudyCard> = {}): Row => {
+  // Board attributes are read through the game's own reader rather than picked
+  // out of the bag here, so the editor never hard-codes the shape of a
+  // namespace it does not own.
+  const board = readBoardAttrs(card as StudyCard)
+  return {
+    key: `row-${rowSeq++}`,
+    front: card.front ?? '',
+    back: card.back ?? '',
+    detail: card.detail ?? '',
+    category: board?.category ?? '',
+    difficulty: board?.difficulty ?? null,
+    // Everything OTHER than this game's namespace, kept so editing a card in
+    // one mode does not quietly delete another mode's data.
+    otherAttrs: Object.fromEntries(
+      Object.entries(card.attrs ?? {}).filter(([key]) => key !== BOARD_NAMESPACE)
+    )
+  }
+}
 
 export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
   const [title, setTitle] = useState(existing?.title ?? '')
   const [description, setDescription] = useState(existing?.description ?? '')
   const [rows, setRows] = useState<Row[]>(() =>
     existing && existing.cards.length > 0
-      ? existing.cards.map(card => newRow(card.front, card.back))
+      ? existing.cards.map(card => newRow(card))
       : [newRow(), newRow(), newRow()]
   )
   const [bulk, setBulk] = useState('')
   const [showBulk, setShowBulk] = useState(false)
   const [imported, setImported] = useState<string | null>(null)
+  // Board fields stay hidden until asked for. Most sets are plain decks, and
+  // three extra inputs per row would tax every one of them to serve some.
+  // Opens by default when the set already has board data, so editing a board
+  // does not hide the thing that makes it a board.
+  const [showBoard, setShowBoard] = useState(
+    () => existing?.cards.some(card => readBoardAttrs(card) !== null) ?? false
+  )
   const fileInput = useRef<HTMLInputElement>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const patchRow = useCallback((key: string, field: 'front' | 'back', value: string) => {
-    setRows(current => current.map(row => (row.key === key ? { ...row, [field]: value } : row)))
+  // What still stands between this set and a playable board. Null when nothing
+  // does — tagging a deck should show progress, not a silent threshold.
+  const boardProgress = useMemo(
+    () =>
+      missingForBoard(
+        rows
+          .filter(row => row.front.trim() !== '')
+          .map(row => ({
+            id: row.key,
+            front: row.front,
+            back: row.back,
+            attrs:
+              row.category.trim() !== '' && row.difficulty !== null
+                ? {
+                    [BOARD_NAMESPACE]: { category: row.category.trim(), difficulty: row.difficulty }
+                  }
+                : {}
+          }))
+      ),
+    [rows]
+  )
+
+  const patchRow = useCallback(
+    (key: string, field: 'front' | 'back' | 'category' | 'detail', value: string) => {
+      setRows(current => current.map(row => (row.key === key ? { ...row, [field]: value } : row)))
+    },
+    []
+  )
+
+  const patchTier = useCallback((key: string, difficulty: number | null) => {
+    setRows(current => current.map(row => (row.key === key ? { ...row, difficulty } : row)))
   }, [])
 
   const removeRow = useCallback((key: string) => {
@@ -77,7 +141,7 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
       // Drop the blank starter rows so an import into a fresh set does not
       // leave three empty cards above it.
       const kept = current.filter(row => row.front.trim() !== '' || row.back.trim() !== '')
-      return [...kept, ...parsed.cards.map(card => newRow(card.front, card.back))]
+      return [...kept, ...parsed.cards.map(card => newRow(card))]
     })
 
     if (parsed.title !== undefined)
@@ -85,6 +149,9 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
     if (typeof parsed.description === 'string') {
       setDescription(current => (current.trim() === '' ? parsed.description! : current))
     }
+
+    // An imported board must not look like it lost its metadata.
+    if (parsed.cards.some(card => readBoardAttrs(card as StudyCard) !== null)) setShowBoard(true)
 
     setError(null)
     setImported(
@@ -131,10 +198,22 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
       return
     }
 
-    const cards: CardInput[] = filled.map(row => ({
-      front: row.front.trim(),
-      back: row.back.trim()
-    }))
+    const cards: CardInput[] = filled.map(row => {
+      const card: CardInput = { front: row.front.trim(), back: row.back.trim() }
+      const detail = row.detail.trim()
+      if (detail !== '') card.detail = detail
+
+      // Only send what was actually set. An empty string is the editor's "not
+      // set", and posting it would store a blank category that then renders as
+      // a nameless board column.
+      const category = row.category.trim()
+      const attrs: Record<string, unknown> = { ...row.otherAttrs }
+      if (category !== '' && row.difficulty !== null) {
+        attrs[BOARD_NAMESPACE] = { category, difficulty: row.difficulty }
+      }
+      if (Object.keys(attrs).length > 0) card.attrs = attrs
+      return card
+    })
     const cleanDescription = description.trim() === '' ? null : description.trim()
 
     setSaving(true)
@@ -191,6 +270,14 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
           <button
             type="button"
             className="btn btn--ghost btn--sm"
+            onClick={() => setShowBoard(v => !v)}
+            aria-pressed={showBoard}
+          >
+            {showBoard ? 'Hide board fields' : 'Board fields'}
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
             onClick={() => fileInput.current?.click()}
           >
             Import a file
@@ -244,6 +331,21 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
 
       {imported !== null && <p className="muted editor__imported">{imported}</p>}
 
+      {showBoard && (
+        <>
+          {/* Suggests categories already in use, so a board does not end up with
+              "Places" and "places" as two columns. */}
+          <datalist id="editor-categories">
+            {[...new Set(rows.map(row => row.category.trim()).filter(c => c !== ''))].map(
+              category => (
+                <option key={category} value={category} />
+              )
+            )}
+          </datalist>
+          {boardProgress !== null && <p className="muted editor__imported">{boardProgress}</p>}
+        </>
+      )}
+
       <ul className="editor__rows">
         {rows.map((row, index) => (
           <li key={row.key} className="editor__row">
@@ -272,6 +374,43 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
             >
               ×
             </button>
+
+            {showBoard && (
+              <div className="editor__board-fields">
+                <input
+                  className="field__input"
+                  list="editor-categories"
+                  value={row.category}
+                  onChange={e => patchRow(row.key, 'category', e.target.value)}
+                  placeholder="Category"
+                  maxLength={40}
+                  aria-label={`Card ${index + 1} board category`}
+                />
+                <select
+                  className="field__input"
+                  value={row.difficulty ?? ''}
+                  onChange={e =>
+                    patchTier(row.key, e.target.value === '' ? null : Number(e.target.value))
+                  }
+                  aria-label={`Card ${index + 1} board tier`}
+                >
+                  <option value="">No tier</option>
+                  {TIERS.map(tier => (
+                    <option key={tier} value={tier}>
+                      {pointsFor(tier)}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="field__input"
+                  value={row.detail}
+                  onChange={e => patchRow(row.key, 'detail', e.target.value)}
+                  placeholder="Detail shown after the answer (optional)"
+                  maxLength={2000}
+                  aria-label={`Card ${index + 1} detail`}
+                />
+              </div>
+            )}
           </li>
         ))}
       </ul>

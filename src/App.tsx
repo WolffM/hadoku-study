@@ -59,10 +59,10 @@ function AppInner({
   const { prefs, save } = usePrefs(studyPrefs)
   const shuffle = prefs?.shuffle ?? false
 
-  const openSet = useCallback((setId: string) => navigate({ setId, drilling: false }), [navigate])
+  const openSet = useCallback((setId: string) => navigate({ setId, playing: null }), [navigate])
   const goHome = useCallback(() => {
     setCreating(false)
-    navigate({ setId: null, drilling: false })
+    navigate({ setId: null, playing: null })
   }, [navigate])
 
   // Gate the first paint so the theme is applied before anything renders.
@@ -70,10 +70,10 @@ function AppInner({
     return <LoadingSkeleton isDarkTheme={isDarkTheme} />
   }
 
-  // Drilling takes the whole screen. The header's controls are worth their space
-  // everywhere else, but a phone studying flashcards should spend every pixel on
-  // the card and on the two buttons under a thumb.
-  const fullscreen = route.setId !== null && route.drilling
+  // Playing takes the whole screen, whichever game it is. The header's controls
+  // are worth their space everywhere else, but a phone mid-game should spend
+  // every pixel on the content and on the buttons under a thumb.
+  const fullscreen = route.setId !== null && route.playing !== null
 
   return (
     <main
@@ -111,11 +111,11 @@ function AppInner({
             <SetPage
               client={client}
               setId={route.setId}
-              drilling={route.drilling}
+              playing={route.playing}
               syncEnabled={syncEnabled}
               shuffle={shuffle}
-              onStartDrill={() => navigate({ setId: route.setId, drilling: true })}
-              onLeaveDrill={() => navigate({ setId: route.setId, drilling: false })}
+              onPlay={gameId => navigate({ setId: route.setId, playing: gameId })}
+              onLeavePlay={() => navigate({ setId: route.setId, playing: null })}
               onBack={goHome}
               onDeleted={goHome}
             />

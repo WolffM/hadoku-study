@@ -13,10 +13,11 @@ worker.
 
 ## Layout
 
-| Path      | What                                                            |
-| --------- | --------------------------------------------------------------- |
-| `src/`    | the micro-frontend (`@wolffm/study`)                            |
-| `worker/` | the API (`@wolffm/study-worker`), running on D1 at `/study/api` |
+| Path         | What                                                            |
+| ------------ | --------------------------------------------------------------- |
+| `src/`       | the micro-frontend (`@wolffm/study`)                            |
+| `src/games/` | one directory per playable mode, plus the registry              |
+| `worker/`    | the API (`@wolffm/study-worker`), running on D1 at `/study/api` |
 
 The host worker and the D1 migrations live in the parent repo, under
 `../hadoku_site/workers/study-api/`.
@@ -41,6 +42,25 @@ than trusting it.
 Only `title` and `cards` are required. On `PUT`, an omitted `published` leaves
 visibility **alone**: a file describes a set's content, so a hand-written one
 that never mentions publication must not be able to unshare a set.
+
+A card may also carry `detail` — the explanation shown after the answer — and
+`attrs`, a bag of per-game attributes keyed by game id. That is how the same
+file describes a flashcard deck and a Jeopardy-style board:
+
+```json
+{
+  "front": "The lakeside city whose great council burned a Czech reformer.",
+  "back": "Constance",
+  "detail": "The Council of 1414–1418, which elected Martin V and executed Jan Hus.",
+  "attrs": { "board": { "category": "Places", "difficulty": 3 } }
+}
+```
+
+Known games are typed and published in the spec; unknown namespaces are
+preserved as-is, so a new mode needs no schema change and no deploy to start
+storing its data. Every board is already a deck — drop the attrs and it still
+studies — while a deck becomes a board only once its cards carry
+`attrs.board`.
 
 In the app, **Export file** is on every set you can read — including someone
 else's published set — and the editor's **Import a file** takes the same

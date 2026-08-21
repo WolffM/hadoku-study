@@ -7,21 +7,22 @@
  * how that is paid for.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ApiError, type StudyClient } from '../api/client'
 import type { StudySetDetail } from '../api/types'
 import { serializeSetFile, setFileName } from '../setFile'
-import { Drill } from './Drill'
+import { GAMES, findGame } from '../games/registry'
 import { Editor } from './Editor'
 
 export interface SetPageProps {
   client: StudyClient
   setId: string
-  drilling: boolean
+  /** The game being played, by id, or null for this page. */
+  playing: string | null
   syncEnabled: boolean
   shuffle: boolean
-  onStartDrill: () => void
-  onLeaveDrill: () => void
+  onPlay: (gameId: string) => void
+  onLeavePlay: () => void
   onBack: () => void
   onDeleted: () => void
 }
@@ -29,11 +30,11 @@ export interface SetPageProps {
 export function SetPage({
   client,
   setId,
-  drilling,
+  playing,
   syncEnabled,
   shuffle,
-  onStartDrill,
-  onLeaveDrill,
+  onPlay,
+  onLeavePlay,
   onBack,
   onDeleted
 }: SetPageProps) {
@@ -120,6 +121,15 @@ export function SetPage({
     window.setTimeout(() => URL.revokeObjectURL(url), 0)
   }, [set])
 
+  // Asked of the registry, not hard-coded: this page does not know what a
+  // board is. Each game decides from the CARDS whether it can be played, so a
+  // deck that gets tagged later starts offering a new mode on its own.
+  const playable = useMemo(
+    () =>
+      set ? GAMES.map(game => ({ game, ...game.availability(set) })).filter(g => g.playable) : [],
+    [set]
+  )
+
   const copyLink = useCallback(() => {
     const url = `${window.location.origin}${window.location.pathname}?set=${encodeURIComponent(setId)}`
     void navigator.clipboard
@@ -170,24 +180,27 @@ export function SetPage({
     )
   }
 
-  if (drilling) {
-    if (set.cards.length === 0) {
+  const game = findGame(playing)
+  if (game) {
+    const availability = game.availability(set)
+    if (!availability.playable) {
       return (
         <div className="panel">
-          <p>This set has no cards yet.</p>
-          <button type="button" className="btn btn--ghost btn--lg" onClick={onLeaveDrill}>
+          <p>{availability.blocked ?? 'This set cannot be played that way yet.'}</p>
+          <button type="button" className="btn btn--ghost btn--lg" onClick={onLeavePlay}>
             Back to set
           </button>
         </div>
       )
     }
+    const { Component } = game
     return (
-      <Drill
+      <Component
         set={set}
         client={client}
         syncEnabled={syncEnabled}
         shuffle={shuffle}
-        onExit={onLeaveDrill}
+        onExit={onLeavePlay}
       />
     )
   }
@@ -217,14 +230,20 @@ export function SetPage({
       )}
 
       <div className="set-page__primary">
-        <button
-          type="button"
-          className="btn btn--primary btn--lg btn--wide"
-          onClick={onStartDrill}
-          disabled={set.cards.length === 0}
-        >
-          Study
-        </button>
+        {playable.length === 0 && <p className="muted">This set has no cards yet.</p>}
+        {playable.map(({ game, summary }, index) => (
+          <button
+            key={game.id}
+            type="button"
+            /* The first playable mode is the primary action. For a plain deck
+               that is Study; the registry's order decides, not this page. */
+            className={`btn btn--lg btn--wide ${index === 0 ? 'btn--primary' : 'btn--ghost set-page__game-btn'}`}
+            onClick={() => onPlay(game.id)}
+          >
+            {game.label}
+            {summary && <span className="set-page__game-summary">{summary}</span>}
+          </button>
+        ))}
       </div>
 
       <div className="set-page__share">

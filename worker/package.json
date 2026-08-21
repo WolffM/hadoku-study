@@ -1,6 +1,6 @@
 {
 	"name": "@wolffm/study-worker",
-	"version": "1.0.2",
+	"version": "1.0.4",
 	"description": "Flashcard creation and spaced study - Worker package",
 	"type": "module",
 	"repository": {

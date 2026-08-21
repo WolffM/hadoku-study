@@ -94,6 +94,51 @@ describe('import accepts what people actually have', () => {
   })
 })
 
+describe('game attributes survive the file format', () => {
+  const withAttrs: StudySetDetail = {
+    ...set,
+    cards: [
+      {
+        id: 'c1',
+        front: 'Clue',
+        back: 'Answer',
+        detail: 'Why.',
+        attrs: { board: { category: 'Places', difficulty: 3 } }
+      }
+    ]
+  }
+
+  it('exports the bag whole', () => {
+    const file = toSetFile(withAttrs)
+    const cards = file.cards as Record<string, unknown>[]
+    expect(cards[0].attrs).toEqual({ board: { category: 'Places', difficulty: 3 } })
+    expect(cards[0].detail).toBe('Why.')
+  })
+
+  it('omits the bag entirely on a plain deck', () => {
+    const cards = toSetFile(set).cards as Record<string, unknown>[]
+    expect(cards[0]).not.toHaveProperty('attrs')
+    expect(cards[0]).not.toHaveProperty('detail')
+  })
+
+  it('round-trips through its own importer', () => {
+    const parsed = parseImport(serializeSetFile(withAttrs))
+    expect(parsed.cards[0].attrs).toEqual({ board: { category: 'Places', difficulty: 3 } })
+  })
+
+  it('carries a namespace this bundle has never heard of', () => {
+    // The file format must not be a place where a new game's data goes to die.
+    // Validating namespaces here would mean this module knowing every game.
+    const parsed = parseImport(
+      JSON.stringify({
+        title: 'T',
+        cards: [{ front: 'a', back: 'b', attrs: { nameThatMap: { region: 'Maguuma' } } }]
+      })
+    )
+    expect(parsed.cards[0].attrs).toEqual({ nameThatMap: { region: 'Maguuma' } })
+  })
+})
+
 describe('import refuses what it cannot read, rather than importing nothing', () => {
   const rejects = (text: string) => {
     expect(() => parseImport(text)).toThrow(SetFileError)

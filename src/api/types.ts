@@ -12,10 +12,24 @@
  *  is not a migration. */
 export type CardResult = 'got' | 'missed'
 
+/**
+ * Per-game attributes, keyed by game id.
+ *
+ * `unknown` per namespace on purpose: this bundle validates only the games it
+ * ships (see each game's own module), and a namespace written by a newer
+ * client round-trips untouched rather than being dropped. Read one with the
+ * owning game's reader, never by reaching in directly.
+ */
+export type CardAttrs = Record<string, unknown>
+
 export interface StudyCard {
   id: string
   front: string
   back: string
+  /** Context revealed after the answer, never the answer itself. A first-class
+   *  field rather than a namespace entry because every mode wants it. */
+  detail?: string | null
+  attrs?: CardAttrs | null
 }
 
 export interface StudySet {
@@ -44,4 +58,6 @@ export interface StoredProgress {
 export interface CardInput {
   front: string
   back: string
+  detail?: string | null
+  attrs?: CardAttrs | null
 }

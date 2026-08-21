@@ -8,6 +8,23 @@ import type { CardRow, ProgressRow, SetRow } from './types.js';
 export const MAX_CARDS_PER_SET = 500;
 export const MAX_FIELD_LENGTH = 2000;
 export const MAX_TITLE_LENGTH = 120;
+/** A board column label. Short because five of them share a phone's width. */
+export const MAX_CATEGORY_LENGTH = 40;
+/** Board rows. Five tiers is what a Jeopardy board is; more would not fit a
+ *  phone, and the value is a TIER rather than a score so points can be
+ *  rescaled at render time. */
+export const MAX_DIFFICULTY = 5;
+/**
+ * Serialized `cards.attrs`, in characters.
+ *
+ * The attrs bag passes unknown game namespaces through unvalidated so a new
+ * mode needs no schema change. That flexibility is exactly what makes a cap
+ * necessary: without one the column is an unbounded blob store that any
+ * friend-tier caller can fill. Generous next to what a game actually needs —
+ * the board uses about 50 characters — and still 500 cards' worth is under a
+ * megabyte.
+ */
+export const MAX_ATTRS_LENGTH = 2000;
 export const MAX_DESCRIPTION_LENGTH = 500;
 
 const ID_ALPHABET = 'abcdefghijkmnopqrstuvwxyz23456789';

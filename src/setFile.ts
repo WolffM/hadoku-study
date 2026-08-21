@@ -43,7 +43,17 @@ export function toSetFile(set: StudySetDetail): Record<string, unknown> {
     title: set.title,
     description: set.description,
     published: set.published,
-    cards: set.cards.map(card => ({ front: card.front, back: card.back }))
+    // Written only where they exist, so a plain flashcard deck exports as a
+    // plain flashcard deck rather than a wall of nulls.
+    cards: set.cards.map(card => {
+      const out: Record<string, unknown> = { front: card.front, back: card.back }
+      if (card.detail) out.detail = card.detail
+      // Whole and unopened: this module has no business knowing which games
+      // exist, and copying the bag verbatim is what lets a set authored by a
+      // newer client survive a round trip through an older one.
+      if (card.attrs && Object.keys(card.attrs).length > 0) out.attrs = card.attrs
+      return out
+    })
   }
 }
 
@@ -114,10 +124,22 @@ function readCards(value: unknown): CardInput[] {
   if (!Array.isArray(value)) return []
   return value
     .filter(isRecord)
-    .map(card => ({
-      front: typeof card.front === 'string' ? card.front.trim() : '',
-      back: typeof card.back === 'string' ? card.back.trim() : ''
-    }))
+    .map(card => {
+      const out: CardInput = {
+        front: typeof card.front === 'string' ? card.front.trim() : '',
+        back: typeof card.back === 'string' ? card.back.trim() : ''
+      }
+      if (typeof card.detail === 'string' && card.detail.trim() !== '') {
+        out.detail = card.detail.trim()
+      }
+      // Carried through whole. Validating a namespace here would mean this
+      // module knowing every game, and would silently drop one authored by a
+      // client newer than this bundle — each game validates its own on read.
+      if (isRecord(card.attrs) && Object.keys(card.attrs).length > 0) {
+        out.attrs = card.attrs
+      }
+      return out
+    })
     .filter(card => card.front !== '' || card.back !== '')
 }
 

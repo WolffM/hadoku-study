@@ -5,8 +5,11 @@
 import { z } from '@hono/zod-openapi';
 import { DetailedErrorResponseSchema, createSuccessResponseSchema } from '@wolffm/worker-utils';
 import {
+	MAX_ATTRS_LENGTH,
 	MAX_CARDS_PER_SET,
+	MAX_CATEGORY_LENGTH,
 	MAX_DESCRIPTION_LENGTH,
+	MAX_DIFFICULTY,
 	MAX_FIELD_LENGTH,
 	MAX_TITLE_LENGTH,
 } from './db.js';
@@ -29,11 +32,63 @@ export const SuccessResponseSchema = createSuccessResponseSchema;
 // Entities
 // ============================================================================
 
+/**
+ * What the BOARD game hangs on a card.
+ *
+ * Typed and published in the spec rather than left freeform, so an agent
+ * generating a board reads a real schema instead of guessing at an opaque
+ * object. Being inside a namespace is what lets the next game define its own
+ * `difficulty` without colliding with this one.
+ */
+export const BoardAttrsSchema = z
+	.object({
+		/** The board's column. A plain string, not a table: a category has no
+		 *  identity beyond its name and no life outside the set using it. */
+		category: z.string().trim().min(1).max(MAX_CATEGORY_LENGTH).openapi({ example: 'Places' }),
+		/** The board's row. A TIER, not a score, so points can be rescaled at
+		 *  render time without rewriting a clue. */
+		difficulty: z.number().int().min(1).max(MAX_DIFFICULTY).openapi({ example: 3 }),
+	})
+	.openapi('BoardAttrs');
+
+/**
+ * Per-game attributes, keyed by game id.
+ *
+ * `.catchall` rather than the default strip: an unknown namespace is a game
+ * this deploy has not heard of, and dropping it would make the server the
+ * bottleneck on every new mode. Passing it through means a game can be built
+ * and played entirely in the client before any of this changes — which is the
+ * whole reason this is a JSON column and not three more columns.
+ *
+ * The cost is that unknown keys are unvalidated, so the SIZE is capped in
+ * `assertAttrsSize`; without that this is an unbounded blob store.
+ */
+export const CardAttrsSchema = z
+	.object({ board: BoardAttrsSchema.optional() })
+	.catchall(z.unknown())
+	.refine((attrs) => JSON.stringify(attrs).length <= MAX_ATTRS_LENGTH, {
+		message: `Game attributes must serialize to at most ${MAX_ATTRS_LENGTH} characters.`,
+	})
+	.openapi('CardAttrs', {
+		description:
+			'Per-game attributes keyed by game id. Known games are typed; unknown keys are preserved as-is so a new mode needs no schema change. The whole object must serialize to at most ' +
+			`${MAX_ATTRS_LENGTH} characters.`,
+	});
+
+/** Fields every mode shares, on the entity and the inputs alike. */
+const commonCardFields = {
+	/** Context revealed after the answer — never the answer itself. Wanted by
+	 *  every mode, so it is a real field rather than a namespace entry. */
+	detail: z.string().trim().max(MAX_FIELD_LENGTH).nullable().optional(),
+	attrs: CardAttrsSchema.nullable().optional(),
+};
+
 export const CardSchema = z
 	.object({
 		id: z.string().openapi({ example: 'qvv7k2mfjxtd' }),
 		front: z.string().openapi({ example: 'кот' }),
 		back: z.string().openapi({ example: 'cat' }),
+		...commonCardFields,
 	})
 	.openapi('Card');
 
@@ -86,6 +141,7 @@ export const ProgressSchema = z
 const cardInput = z.object({
 	front: z.string().trim().min(1).max(MAX_FIELD_LENGTH),
 	back: z.string().trim().min(1).max(MAX_FIELD_LENGTH),
+	...commonCardFields,
 });
 
 /**

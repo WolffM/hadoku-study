@@ -61,6 +61,19 @@ export interface CardRow {
 	front: string;
 	back: string;
 	position: number;
+	/** The "why" shown after the answer — context, not the answer itself.
+	 *  A real column because every mode wants it. */
+	detail: string | null;
+	/**
+	 * Per-game attributes as a JSON STRING, keyed by game id — or NULL on an
+	 * ordinary flashcard. Parsed at the edge of the handler, never used raw.
+	 *
+	 * A set whose cards carry `attrs.board` can be played as a board; one that
+	 * does not is a plain deck. Board-ness is DERIVED from the cards rather
+	 * than flagged on the set, so a set cannot claim to be something its cards
+	 * are not.
+	 */
+	attrs: string | null;
 }
 
 /**

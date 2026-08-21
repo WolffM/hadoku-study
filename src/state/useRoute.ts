@@ -1,7 +1,8 @@
 /**
  * Where in the app we are, expressed in the URL.
  *
- * `/study?set=<id>` and `?set=<id>&drill=1`. A query param rather than a path
+ * `/study?set=<id>` and `?set=<id>&play=<game>`. A query param rather than a
+ * path
  * segment because this bundle mounts at the single static route `/study` — the
  * host page has no subpaths to hand us, and this is the same shape `/meet` uses
  * for its `?e=` links.
@@ -15,21 +16,37 @@ import { useCallback, useEffect, useState } from 'react'
 
 export interface Route {
   setId: string | null
-  drilling: boolean
+  /**
+   * The game being played, by id — or null for the set's own page.
+   *
+   * A game ID rather than a fixed union, so adding a mode is a registry entry
+   * and nothing else. An id the registry does not know resolves to null, which
+   * is the set page: an old link to a retired game lands somewhere sensible
+   * rather than on a blank screen.
+   */
+  playing: string | null
 }
 
 function read(): Route {
   const params = new URLSearchParams(window.location.search)
   const setId = params.get('set')
-  return { setId: setId && setId !== '' ? setId : null, drilling: params.get('drill') === '1' }
+  // `drill=1` is still honoured. Those links are already in the wild, and a
+  // shared study link must not break just because modes became pluggable.
+  const playing = params.get('drill') === '1' ? 'drill' : (params.get('play') ?? null)
+  return {
+    setId: setId && setId !== '' ? setId : null,
+    playing: playing && playing !== '' ? playing : null
+  }
 }
 
 function write(route: Route, replace: boolean): void {
   const url = new URL(window.location.href)
   if (route.setId) url.searchParams.set('set', route.setId)
   else url.searchParams.delete('set')
-  if (route.setId && route.drilling) url.searchParams.set('drill', '1')
-  else url.searchParams.delete('drill')
+
+  url.searchParams.delete('drill')
+  url.searchParams.delete('play')
+  if (route.setId && route.playing) url.searchParams.set('play', route.playing)
 
   const next = `${url.pathname}${url.search}${url.hash}`
   if (replace) window.history.replaceState({}, '', next)
@@ -39,7 +56,7 @@ function write(route: Route, replace: boolean): void {
 export function useRoute(): [Route, (next: Route, replace?: boolean) => void] {
   const [route, setRoute] = useState<Route>(read)
 
-  // The back button must work. Without this, leaving a drill with the browser's
+  // The back button must work. Without this, leaving a game with the browser's
   // back gesture — the natural thing to do on a phone — would change the URL
   // and leave the app showing the card it was on.
   useEffect(() => {

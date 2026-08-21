@@ -64,18 +64,62 @@ function toSetJson(row: SetRow, cardCount: number, viewerId: string | null) {
 	};
 }
 
-const toCardJson = (row: CardRow) => ({ id: row.id, front: row.front, back: row.back });
+/**
+ * Parse the stored attrs bag.
+ *
+ * Returns null rather than throwing on malformed JSON: the column is only ever
+ * written from a validated serialization, so a bad value means corruption
+ * upstream, and failing the whole GET would take the set's readable content
+ * down with it. A card that loses its game attributes is still a flashcard.
+ */
+function parseAttrs(raw: string | null): Record<string, unknown> | null {
+	if (raw === null || raw === '') return null;
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+			? (parsed as Record<string, unknown>)
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+const toCardJson = (row: CardRow) => ({
+	id: row.id,
+	front: row.front,
+	back: row.back,
+	detail: row.detail,
+	attrs: parseAttrs(row.attrs),
+});
 
 const listJson = (rows: SetWithCount[], viewerId: string | null) =>
 	rows.map((row) => toSetJson(row, row.card_count, viewerId));
 
+/** Columns bound per card row — keep in step with the INSERT below. */
+const CARD_COLUMNS = 7;
+
+/**
+ * Serialize a card's attrs for storage.
+ *
+ * The SIZE limit is enforced in the schema rather than here, so an oversized
+ * bag is a validation error with a field path instead of an exception thrown
+ * three layers down. An empty object stores as NULL: `{}` and "no attrs" mean
+ * the same thing, and keeping one representation means a card cannot be
+ * not-a-board-clue in two distinguishable ways.
+ */
+function serializeAttrs(attrs: CardInput['attrs']): string | null {
+	if (attrs === null || attrs === undefined) return null;
+	if (Object.keys(attrs).length === 0) return null;
+	return JSON.stringify(attrs);
+}
+
 /**
  * Rows per INSERT.
  *
- * Each row binds 5 parameters, so 50 rows is 250 — comfortably inside SQLite's
- * 999-variable ceiling, and it turns a full 500-card set into 12 statements
- * rather than 502. One statement per card would put the batch's size in the
- * hands of whoever pasted the deck.
+ * Each row binds {@link CARD_COLUMNS} parameters, so 50 rows is 400 —
+ * comfortably inside SQLite's 999-variable ceiling, and it turns a full
+ * 500-card set into 12 statements rather than 502. One statement per card would
+ * put the batch's size in the hands of whoever pasted the deck.
  */
 const INSERT_CHUNK = 50;
 
@@ -98,18 +142,30 @@ function chunk<T>(items: T[], size: number): T[][] {
 function cardReplacementStatements(db: D1Database, setId: string, cards: CardInput[]) {
 	const inserts = chunk(cards, INSERT_CHUNK).map((group, groupIndex) => {
 		const values = group.map((_, i) => {
-			const p = i * 5;
-			return `(?${p + 1}, ?${p + 2}, ?${p + 3}, ?${p + 4}, ?${p + 5})`;
+			const p = i * CARD_COLUMNS;
+			const slots = Array.from({ length: CARD_COLUMNS }, (_unused, n) => `?${p + n + 1}`);
+			return `(${slots.join(', ')})`;
 		});
-		const bindings = group.flatMap((card, i) => [
-			newId(),
-			setId,
-			card.front,
-			card.back,
-			groupIndex * INSERT_CHUNK + i,
-		]);
+		const bindings = group.flatMap((card, i) => {
+			const position = groupIndex * INSERT_CHUNK + i;
+			return [
+				newId(),
+				setId,
+				card.front,
+				card.back,
+				position,
+				// `?? null` rather than omitting: an absent optional field and an
+				// explicit null both mean "not set", and D1 will not bind
+				// `undefined`.
+				card.detail ?? null,
+				serializeAttrs(card.attrs),
+			];
+		});
 		return db
-			.prepare(`INSERT INTO cards (id, set_id, front, back, position) VALUES ${values.join(', ')}`)
+			.prepare(
+				`INSERT INTO cards (id, set_id, front, back, position, detail, attrs)
+				 VALUES ${values.join(', ')}`
+			)
 			.bind(...bindings);
 	});
 

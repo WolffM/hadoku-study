@@ -409,6 +409,9 @@
 }
 
 .set-page__primary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-sm);
   margin-block: var(--hdk-space-sm);
 }
 
@@ -418,6 +421,22 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--hdk-space-sm);
+}
+
+/* Stacks its label over a one-line summary the GAME provides, so the button
+   says what you are about to play rather than making you go and count. */
+.set-page__game-btn {
+  flex-direction: column;
+  gap: 2px;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.set-page__game-summary {
+  font-size: var(--hdk-text-xs);
+  font-weight: 400;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .set-page__owner {
@@ -481,6 +500,19 @@
   background-color: var(--color-bg-alt);
   border-radius: var(--hdk-radius);
   padding: var(--hdk-space-md);
+}
+
+/* A second line under the card's two faces, not a second column: on a phone
+   five inputs across is unusable, and board tagging is the rarer task. */
+.editor__board-fields {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--hdk-space-xs);
+}
+
+.editor__board-fields .field__input:last-child {
+  grid-column: 1 / -1;
 }
 
 .editor__rows {
@@ -768,5 +800,265 @@
 
   .btn:active:not(:disabled) {
     transform: none;
+  }
+}
+
+/* ==========================================================================
+   Board
+
+   Phone-first. A tile shows only its points, which is what lets five columns
+   fit a 375px screen at a size a thumb can hit — the category names carry the
+   meaning once, along the top. Every colour here is a theme token; a filled
+   tile takes its text from the matching --color-on-* so it stays legible in
+   every theme rather than assuming a light or dark ground.
+   ========================================================================== */
+
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-md);
+}
+
+.board__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hdk-space-md);
+}
+
+.board__score {
+  margin: 0;
+  font-size: var(--hdk-text-md);
+  /* Digits change constantly as the board is played; tabular figures stop the
+     score jittering sideways on every answer. */
+  font-variant-numeric: tabular-nums;
+}
+
+.board__score-value {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.board__score-max {
+  color: var(--color-text-tertiary);
+}
+
+.board__grid {
+  display: grid;
+  grid-template-columns: repeat(var(--board-columns, 5), minmax(0, 1fr));
+  gap: var(--hdk-space-xs);
+}
+
+.board__category {
+  margin: 0;
+  padding-bottom: var(--hdk-space-xs);
+  font-size: var(--hdk-text-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  /* Wraps rather than truncates: a category name is the only label on the
+     board, and a clipped one makes its whole column a guess. */
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary);
+}
+
+.board__cell {
+  /* Taller than wide at phone widths, which keeps the tap target comfortably
+     past the 44px minimum even when five columns share a narrow screen. */
+  min-height: 3rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hdk-radius-sm);
+  background-color: var(--color-primary-bg);
+  color: var(--color-on-primary-bg);
+  font-size: var(--hdk-text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+
+.board__cell:hover:not(:disabled) {
+  background-color: var(--color-primary-hover);
+}
+
+.board__cell:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.board__cell:focus-visible {
+  outline: none;
+  box-shadow: var(--hdk-shadow-focus);
+}
+
+.board__cell:disabled {
+  cursor: default;
+}
+
+/* A played tile stays in place and reads as spent, so the grid keeps its shape
+   and you can see at a glance which column you have been avoiding. */
+.board__cell--got {
+  background-color: var(--color-success-bg);
+  color: var(--color-on-success-bg);
+  border-color: var(--color-success);
+}
+
+.board__cell--missed {
+  background-color: var(--color-bg-alt);
+  color: var(--color-text-tertiary);
+}
+
+.board__cell--empty {
+  border: 1px dashed var(--color-border-light);
+  border-radius: var(--hdk-radius-sm);
+  min-height: 3rem;
+}
+
+.board__done {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hdk-space-md);
+}
+
+.board__done p {
+  margin: 0;
+}
+
+.board__note {
+  margin: 0;
+  font-size: var(--hdk-text-sm);
+}
+
+/* --------------------------------------------------------------------------
+   Clue sheet
+
+   Full-screen, because an inline panel under the grid puts the answer below
+   the fold on a phone — you would have to scroll to find out whether you were
+   right. Actions are pinned to the bottom so revealing the answer grows the
+   content ABOVE them and the buttons never move under a moving thumb.
+   -------------------------------------------------------------------------- */
+
+.board__sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-bg);
+  padding: var(--hdk-space-lg);
+  /* Clears the iOS home indicator and any browser chrome overlay. */
+  padding-bottom: max(var(--hdk-space-lg), env(safe-area-inset-bottom));
+  gap: var(--hdk-space-md);
+}
+
+.board__sheet-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--hdk-space-md);
+  padding-bottom: var(--hdk-space-sm);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.board__sheet-cat {
+  font-size: var(--hdk-text-sm);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.board__sheet-val {
+  font-size: var(--hdk-text-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+
+.board__sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-md);
+  /* A long clue scrolls inside the sheet rather than pushing the actions off
+     the bottom of the viewport. */
+  min-height: 0;
+}
+
+.board__clue {
+  margin: 0;
+  font-size: var(--hdk-text-lg);
+  line-height: 1.5;
+}
+
+.board__answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-sm);
+  padding-top: var(--hdk-space-md);
+  border-top: 1px solid var(--color-border-light);
+}
+
+.board__answer-text {
+  margin: 0;
+  font-size: var(--hdk-text-lg);
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.board__detail {
+  margin: 0;
+  font-size: var(--hdk-text-sm);
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.board__sheet-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--hdk-space-sm);
+}
+
+.board__sheet-actions .btn {
+  width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board__cell {
+    transition: none;
+  }
+
+  .board__cell:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* On a roomier screen the sheet becomes a centred dialog rather than taking
+   the whole viewport, which would look absurd on a desktop monitor. */
+@media (min-width: 40rem) {
+  .board__cell,
+  .board__cell--empty {
+    min-height: 4rem;
+  }
+
+  .board__cell {
+    font-size: var(--hdk-text-md);
+  }
+
+  .board__category {
+    font-size: var(--hdk-text-sm);
+  }
+
+  .board__sheet {
+    /* Pinned to both edges with an explicit width and auto side margins, which
+       centres it without a translate that has to be kept in step with the
+       width. */
+    inset: 10vh 0 auto;
+    width: min(38rem, calc(100vw - 2 * var(--hdk-space-xl)));
+    margin-inline: auto;
+    max-height: 80vh;
+    border: 1px solid var(--color-border);
+    border-radius: var(--hdk-radius-lg);
+    box-shadow: var(--hdk-shadow-lg);
   }
 }
