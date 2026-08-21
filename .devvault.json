@@ -1,0 +1,6 @@
+{
+  "//": "Maps env var name (left, what code reads) → vault key (right, what's stored). Loaded by ../hadoku_site/scripts/secrets/dev-vault.mjs. NO secrets in this file — only the mapping.",
+  "HADOKU_SERVICE_KEY": "KEY_SERVICE_STUDY",
+  "//identity": "HADOKU_SERVICE_KEY is study's own identity — vault item KEY_SERVICE_STUDY, registered as `study-service-key` against WolffM/hadoku-study. The worker itself does NOT read this: study-api authenticates END USERS via X-User-Key/X-Session-Id resolved by edge-router, and its only CF binding is the shared EDGE_AUTH_SECRET, pushed from hadoku_site's update_cloudflare_secrets config. This credential is for study calling other hadoku services AS ITSELF, and for operator/agent commands run from this repo.",
+  "//scope": "Deliberately minimal — one entry. ACL rows are granted FROM this file, so adding a mapping grants this key read access to that secret. Add one when a consumer actually exists, not in advance: a grant with no consumer is what later reads as drift."
+}
