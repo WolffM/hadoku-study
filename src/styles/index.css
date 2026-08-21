@@ -94,6 +94,15 @@
    ========================================================================== */
 
 .btn {
+  /* Flex, not the inline-block a <button> defaults to. Without this a button
+     with more than one child lays its children out as inline text: the board
+     tile's label and its clue count rendered as "Play as board25 clues", with
+     no gap to separate them, because `flex-direction` on an inline-block does
+     nothing at all. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hdk-space-sm);
   font-family: var(--font-family);
   font-weight: var(--font-weight-semibold);
   border: 1px solid transparent;
@@ -381,62 +390,188 @@
 .set-page {
   display: flex;
   flex-direction: column;
-  gap: var(--hdk-space-md);
+  gap: var(--hdk-space-lg);
 }
 
+/* A back LINK, not a boxed button. It sat in a bordered box the same weight as
+   the actions below it, which made leaving look like a thing to do rather than
+   the way out. */
 .set-page__back {
   align-self: flex-start;
+  padding-inline: 0;
+  min-height: auto;
+  border: 0;
+  background: none;
+  color: var(--color-text-secondary);
+  font-size: var(--hdk-text-sm);
+}
+
+.set-page__back:hover {
+  color: var(--color-text);
+  background: none;
+}
+
+.set-page__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-xs);
 }
 
 .set-page__title {
   margin: 0;
-  font-size: 1.75rem;
+  /* Larger than --hdk-text-lg (24px), which is the biggest type token and too
+     close to body copy for the one thing on the page that should dominate. */
+  font-size: clamp(1.6rem, 6vw, 2rem);
+  line-height: 1.15;
   color: var(--color-text);
+  text-wrap: balance;
 }
 
 .set-page__desc {
   margin: 0;
   color: var(--color-text-secondary);
+  /* Long enough to read comfortably, short enough that a description does not
+     stretch to the full width of a desktop window. */
+  max-width: 60ch;
 }
 
 .set-page__meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--hdk-space-sm);
   margin: 0;
   font-size: var(--hdk-text-sm);
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
 }
 
-.set-page__primary {
-  display: flex;
-  flex-direction: column;
-  gap: var(--hdk-space-sm);
-  margin-block: var(--hdk-space-sm);
-}
+/* --------------------------------------------------------------------------
+   Choosing a mode
+   -------------------------------------------------------------------------- */
 
-/* Available to anyone who can read the set — a reader of a published set can
-   take a copy and copy the link, both of which need no ownership. */
-.set-page__share {
-  display: flex;
-  flex-wrap: wrap;
+.mode-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
   gap: var(--hdk-space-sm);
 }
 
-/* Stacks its label over a one-line summary the GAME provides, so the button
-   says what you are about to play rather than making you go and count. */
-.set-page__game-btn {
+/* Side by side once there is room for two to be read at a glance; stacked on a
+   phone, where a row of two would squeeze both. */
+@media (min-width: 34rem) {
+  .mode-list {
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  }
+}
+
+.mode {
+  /* Overrides .btn's centred row: a tile reads top-down and left-aligned. */
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hdk-space-md);
+  text-align: left;
+  padding: var(--hdk-space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hdk-radius-lg);
+  background-color: var(--color-bg-card);
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.mode:hover {
+  border-color: var(--color-primary);
+  background-color: var(--color-bg-hover);
+}
+
+.mode:focus-visible {
+  outline: none;
+  box-shadow: var(--hdk-shadow-focus);
+}
+
+.mode:active {
+  transform: scale(0.995);
+}
+
+.mode__text {
+  display: flex;
   flex-direction: column;
   gap: 2px;
-  border-color: var(--color-primary);
+  min-width: 0;
+}
+
+.mode__name {
+  font-size: var(--hdk-text-md);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-primary);
 }
 
-.set-page__game-summary {
+.mode__blurb {
+  font-size: var(--hdk-text-sm);
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+}
+
+.mode__summary {
+  margin-top: var(--hdk-space-xs);
   font-size: var(--hdk-text-xs);
   font-weight: 400;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
   font-variant-numeric: tabular-nums;
+}
+
+.mode__preview {
+  flex-shrink: 0;
+}
+
+/* The board in miniature — a full grid and a half-empty one are different
+   propositions, and a clue count cannot say which you have. */
+.board-preview {
+  display: grid;
+  grid-template-columns: repeat(var(--preview-columns, 5), 1fr);
+  gap: 2px;
+}
+
+.board-preview__cell {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background-color: var(--color-border);
+}
+
+.board-preview__cell--filled {
+  background-color: var(--color-primary);
+}
+
+/* --------------------------------------------------------------------------
+   Everything that is not playing
+   -------------------------------------------------------------------------- */
+
+.set-page__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hdk-space-xs);
+}
+
+/* Text-weight, for actions that should be available without competing with the
+   modes above them. */
+.btn--quiet {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--color-text-secondary);
+  padding-inline: var(--hdk-space-sm);
+}
+
+.btn--quiet:hover:not(:disabled) {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text);
 }
 
 .set-page__owner {
@@ -449,6 +584,7 @@
 
 .set-page__note {
   margin: 0;
+  font-size: var(--hdk-text-sm);
 }
 
 /* ==========================================================================

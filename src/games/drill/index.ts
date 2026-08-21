@@ -18,6 +18,7 @@ import { Drill } from '../../views/Drill'
 export const drillGame: GameDefinition = {
   id: 'drill',
   label: 'Study',
+  blurb: 'Flip each card and grade yourself. Missed cards come round again.',
   availability: set =>
     set.cards.length > 0
       ? { playable: true }

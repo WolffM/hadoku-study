@@ -8,11 +8,14 @@
 
 import type { GameDefinition } from '../types'
 import { Board } from './Board'
+import { BoardPreview } from './BoardPreview'
 import { BOARD_NAMESPACE, buildBoard, missingForBoard } from './model'
 
 export const boardGame: GameDefinition = {
   id: BOARD_NAMESPACE,
   label: 'Play as board',
+  blurb: 'Pick a category and a tier, then score yourself on the reveal.',
+  Preview: BoardPreview,
   availability: set => {
     const board = buildBoard(set.cards)
     if (board.clueCount === 0) {

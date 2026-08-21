@@ -41,6 +41,23 @@ export interface GameDefinition {
   id: string
   /** Button text on the set page. */
   label: string
+  /**
+   * One line on what this mode actually does, shown under the label.
+   *
+   * Static, and owned by the game: the set page offers a CHOICE between modes,
+   * and a choice between two bare verbs makes the reader guess what they are
+   * picking. `availability().summary` is the dynamic counterpart — this
+   * describes the mode, that describes this set in it.
+   */
+  blurb: string
+  /**
+   * Optional at-a-glance picture of this set in this mode.
+   *
+   * Here so a game can show its own shape without the set page learning what
+   * any of them look like — the board draws its grid, and a mode with nothing
+   * useful to draw simply omits it.
+   */
+  Preview?: ComponentType<{ set: StudySetDetail }>
   /** Whether this set can be played, decided from the CARDS. Derived every
    *  time rather than stored, so a set that gets tagged later starts
    *  qualifying on its own with no migration and no flag to keep in sync. */

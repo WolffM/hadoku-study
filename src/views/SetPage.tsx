@@ -211,17 +211,20 @@ export function SetPage({
         ← All sets
       </button>
 
-      <h1 className="set-page__title">{set.title}</h1>
-      {set.description && <p className="set-page__desc">{set.description}</p>}
-
-      <p className="set-page__meta">
-        {set.cardCount} {set.cardCount === 1 ? 'card' : 'cards'}
-        {set.isOwner && (
-          <span className={`badge ${set.published ? 'badge--success' : 'badge--neutral'}`}>
-            {set.published ? 'Published' : 'Private'}
+      <header className="set-page__head">
+        <h1 className="set-page__title">{set.title}</h1>
+        {set.description && <p className="set-page__desc">{set.description}</p>}
+        <p className="set-page__meta">
+          <span>
+            {set.cardCount} {set.cardCount === 1 ? 'card' : 'cards'}
           </span>
-        )}
-      </p>
+          {set.isOwner && (
+            <span className={`badge ${set.published ? 'badge--success' : 'badge--neutral'}`}>
+              {set.published ? 'Published' : 'Private'}
+            </span>
+          )}
+        </p>
+      </header>
 
       {error !== null && (
         <p className="panel panel--error" role="alert">
@@ -229,34 +232,49 @@ export function SetPage({
         </p>
       )}
 
-      <div className="set-page__primary">
-        {playable.length === 0 && <p className="muted">This set has no cards yet.</p>}
-        {playable.map(({ game, summary }, index) => (
-          <button
-            key={game.id}
-            type="button"
-            /* The first playable mode is the primary action. For a plain deck
-               that is Study; the registry's order decides, not this page. */
-            className={`btn btn--lg btn--wide ${index === 0 ? 'btn--primary' : 'btn--ghost set-page__game-btn'}`}
-            onClick={() => onPlay(game.id)}
-          >
-            {game.label}
-            {summary && <span className="set-page__game-summary">{summary}</span>}
-          </button>
-        ))}
-      </div>
+      {playable.length === 0 ? (
+        <p className="muted">This set has no cards yet.</p>
+      ) : (
+        <ul className="mode-list">
+          {playable.map(({ game, summary }) => {
+            const { Preview } = game
+            return (
+              <li key={game.id}>
+                {/* A tile, not a row of buttons. Picking how to study is a
+                    CHOICE between modes, and two full-width slabs of the same
+                    size gave no way to tell them apart or to see what either
+                    one would be like. */}
+                <button type="button" className="mode" onClick={() => onPlay(game.id)}>
+                  <span className="mode__text">
+                    <span className="mode__name">{game.label}</span>
+                    <span className="mode__blurb">{game.blurb}</span>
+                    {summary && <span className="mode__summary">{summary}</span>}
+                  </span>
+                  {Preview && (
+                    <span className="mode__preview">
+                      <Preview set={set} />
+                    </span>
+                  )}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
 
-      <div className="set-page__share">
+      {/* Quieter than the modes on purpose: taking a copy is a useful thing to
+          be able to do, not a thing anyone came here for. */}
+      <div className="set-page__tools">
         <button
           type="button"
-          className="btn btn--ghost btn--sm"
+          className="btn btn--quiet btn--sm"
           onClick={exportFile}
           disabled={set.cards.length === 0}
         >
           Export file
         </button>
         {set.published && (
-          <button type="button" className="btn btn--ghost btn--sm" onClick={copyLink}>
+          <button type="button" className="btn btn--quiet btn--sm" onClick={copyLink}>
             {copied ? 'Link copied' : 'Copy link'}
           </button>
         )}
