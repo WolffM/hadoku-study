@@ -1,6 +1,6 @@
 {
 	"name": "@wolffm/study-worker",
-	"version": "1.0.8",
+	"version": "1.0.9",
 	"description": "Flashcard creation and spaced study - Worker package",
 	"type": "module",
 	"repository": {
@@ -41,7 +41,7 @@
 		"@hono/zod-openapi": "^1.1.5",
 		"@typescript-eslint/eslint-plugin": "^8.46.4",
 		"@typescript-eslint/parser": "^8.46.4",
-		"@wolffm/worker-utils": "^1.5.7",
+		"@wolffm/worker-utils": "^1.5.8",
 		"eslint": "^9.39.1",
 		"eslint-config-prettier": "^10.1.8",
 		"hono": "^4.11.4",
