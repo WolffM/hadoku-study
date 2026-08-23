@@ -205,6 +205,37 @@ Not a polish pass. Measured on a 390x844 viewport: 25 tiles at 73x48 (past the
   grows the content ABOVE them and the buttons never move under a thumb already
   travelling toward them. Same rule as the flip card, same reason.
 
+## Who logs what
+
+edge-router already writes one telemetry row per request — method, path,
+status, duration, backend, caller tier, masked key, geo — and since 2026-08-21
+that covers successful `/<app>/api/` calls too, matched by path SHAPE rather
+than the hand-maintained allowlist that had silently excluded fourteen apps
+including this one. Query it at `/health/api/logs/query?path=/study/api`.
+
+So this app logs only what the edge CANNOT see, and duplicating the edge's row
+is waste:
+
+- **The worker** (`worker/src/telemetry.ts`) logs failure CAUSES — the edge
+  sees `500`, not the D1 error that names the problem — and business events
+  (`set.created`, `set.replaced`, …) carrying a deck summary of counts, never
+  content.
+- **The UI** logs the API failure paths, which previously vanished entirely,
+  plus `study.board.completed` — the one action no HTTP log can ever observe,
+  because the game runs client-side once the set is fetched.
+
+Use the logger's own helpers (`component`, `apiRequest`, `apiResponse`,
+`preference`), not hand-rolled `info('[study] …')` strings: the helpers stamp
+the event type the telemetry schema expects. Note `apiResponse` escalates every
+non-2xx to ERROR, which is wrong for the 404 a private set is SUPPOSED to
+return — it is called on the success path only.
+
+Browser logs still reach the console alone: nothing calls
+`configureLogger({ telemetrySink })`, and wiring one needs a browser-writable
+ingest that monitoring-api deliberately does not offer (its only friend-tier
+write is the game beacon, scope-limited on purpose). Open decision, not an
+oversight.
+
 ## The OpenAPI spec is the agent interface
 
 Served at `/study/api/openapi.json`, generated from the same zod schemas the
@@ -242,7 +273,18 @@ build, it breaks the next caller who trusts it:
 - **Canonical session keys.** `hadoku_session_id` and `hadoku_user_type` in
   localStorage. Do not invent `studySessionId`.
 - **Colors come from tokens only.** No hex, no `text-white` on a filled
-  background, no `var(--color-x, #fallback)`. `pnpm run lint:css`.
+  background, no `var(--color-x, #fallback)`. `pnpm run lint:css`. And never an
+  ACCENT as text on a plain surface (`color: var(--color-primary)` on a card or
+  the page) — it lands unvalidated and misses AA in most themes. Pair a filled
+  surface `bg-<f>` with `text-on-<f>`, a tint `bg-<f>-bg` with `text-on-<f>-bg`.
+  Both mistakes shipped on the board and set page on 2026-08-21.
+- **D1 binds at most 100 parameters per statement**, NOT SQLite's 999. The
+  difference is invisible until a set crosses the line and every write of it
+  500s. `INSERT_CHUNK` in `routes/sets.ts` therefore DERIVES from
+  `D1_MAX_BOUND_PARAMS / CARD_COLUMNS`, and `sets.chunking.test.ts` pins the
+  arithmetic — the original constant claimed 999, chunked at 50 rows, and broke
+  every set over 20 cards from launch until the first 25-clue board found it.
+  Adding a column silently lowers the ceiling, so do not hand-pick this number.
 - **No `.env` files.** Local dev secrets go through `.devvault.json`.
 - **CI must not say `runs-on: ubuntu-latest`.** Use
   `${{ fromJSON(vars.CI_RUNNER || '["self-hosted","hadoku-builder"]') }}`.
