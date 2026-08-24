@@ -87,10 +87,19 @@ export interface BoardOptions {
 export function buildBoard(cards: PlayCard[], options: BoardOptions = {}): BoardModel {
   const rankBy = options.rankBy ?? bySeedTier
   const rows = options.rows ?? DEFAULT_ROWS
-  const categories = chooseCategories(
-    candidateCategories(cards),
-    options.columns ?? DEFAULT_COLUMNS
-  )
+  const available = candidateCategories(cards)
+
+  // Enforced HERE, not in a separate `isPlayable` the caller has to remember
+  // to ask. A predicate answering the same question from the same inputs is a
+  // second answer waiting to disagree — and it did: the game definition gated
+  // on `clueCount === 0` instead, so a set asking only ONE kind of question
+  // would have been offered a single-column board, which is the deck with a
+  // number on it.
+  if (available.length < MIN_COLUMNS) {
+    return { columns: [], clueCount: 0, unplaced: cards, maxScore: 0 }
+  }
+
+  const categories = chooseCategories(available, options.columns ?? DEFAULT_COLUMNS)
 
   const placements = dealCells(categories, rows, rankBy)
 
@@ -130,11 +139,6 @@ export function buildBoard(cards: PlayCard[], options: BoardOptions = {}): Board
     unplaced: cards.filter(card => !placed.has(card.id)),
     maxScore
   }
-}
-
-/** Whether a set is worth offering "Play as board" for at all. */
-export function isPlayable(cards: PlayCard[]): boolean {
-  return candidateCategories(cards).length >= MIN_COLUMNS
 }
 
 /**

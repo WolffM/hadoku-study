@@ -58,7 +58,3 @@ export function toPlayCards(facts: StudyFact[]): PlayCard[] {
     }))
   )
 }
-
-/** How many questions a set holds, from facts already in hand. */
-export const countQuestions = (facts: StudyFact[]): number =>
-  facts.reduce((total, fact) => total + fact.variants.length, 0)

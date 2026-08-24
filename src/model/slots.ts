@@ -30,9 +30,6 @@ export const KNOWN_SLOTS = [
   'definition'
 ] as const
 
-/** Slots whose answer is explained rather than named. */
-export const OPEN_SLOTS = new Set(['why', 'how', 'definition'])
-
 /**
  * What the server asks when a fact declares nothing: each slot in turn, giving
  * all the others.

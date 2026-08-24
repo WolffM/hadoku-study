@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { countQuestions, playCardId, toPlayCards } from './playCards'
+import { playCardId, toPlayCards } from './playCards'
 import { asks, authored, fact, flashcard, variant } from '../testing/fixtures'
 
 describe('toPlayCards', () => {
@@ -96,15 +96,5 @@ describe('toPlayCards', () => {
 
   it('handles an empty set', () => {
     expect(toPlayCards([])).toEqual([])
-  })
-})
-
-describe('countQuestions', () => {
-  it('adds up what the facts expand into', () => {
-    expect(countQuestions([authored('a'), flashcard('b')])).toBe(3)
-  })
-
-  it('is zero for an empty set', () => {
-    expect(countQuestions([])).toBe(0)
   })
 })

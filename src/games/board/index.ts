@@ -42,7 +42,6 @@ export {
   buildBoard,
   candidateCategories,
   chooseCategories,
-  isPlayable,
   labelFor,
   missingForBoard,
   pointsFor,

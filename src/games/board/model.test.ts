@@ -16,7 +16,6 @@ import {
   buildBoard,
   candidateCategories,
   chooseCategories,
-  isPlayable,
   labelFor,
   missingForBoard,
   pointsFor
@@ -142,7 +141,14 @@ describe('dealing the grid', () => {
   })
 
   it('orders each column by rank, easiest at the top', () => {
-    const facts = [asks('hard', 'when', 5), asks('easy', 'when', 1), asks('mid', 'when', 3)]
+    // A second slot so the set qualifies as a board at all; `columns: 1` then
+    // isolates the richest column, which is the one under test.
+    const facts = [
+      asks('hard', 'when', 5),
+      asks('easy', 'when', 1),
+      asks('mid', 'when', 3),
+      asks('other', 'who')
+    ]
     const board = buildBoard(cardsOf(facts), { columns: 1 })
     const column = board.columns[0]
     expect([1, 2, 3].map(row => column.cells.get(row)?.card.factId)).toEqual([
@@ -153,7 +159,7 @@ describe('dealing the grid', () => {
   })
 
   it('re-sorts when the ranking changes, which is why a board responds to play', () => {
-    const cards = cardsOf([asks('a', 'when', 1), asks('b', 'when', 5)])
+    const cards = cardsOf([asks('a', 'when', 1), asks('b', 'when', 5), asks('other', 'who')])
     const learned = new Map(cards.map(card => [card.id, card.factId === 'a' ? 1500 : 900]))
     const board = buildBoard(cards, { columns: 1, rankBy: card => learned.get(card.id) ?? 0 })
     expect(board.columns[0].cells.get(1)?.card.factId).toBe('b')
@@ -161,7 +167,10 @@ describe('dealing the grid', () => {
   })
 
   it('spans a long column rather than taking its five easiest', () => {
-    const facts = Array.from({ length: 15 }, (_, i) => asks(`f${i}`, 'when', 3))
+    const facts = [
+      ...Array.from({ length: 15 }, (_, i) => asks(`f${i}`, 'when', 3)),
+      asks('other', 'who')
+    ]
     const ranks = new Map(facts.map((f, i) => [f.id, i]))
     const board = buildBoard(cardsOf(facts), {
       columns: 1,
@@ -187,7 +196,10 @@ describe('dealing the grid', () => {
   })
 
   it('leaves everything it could not place in the deck', () => {
-    const facts = Array.from({ length: 9 }, (_, i) => asks(`f${i}`, 'when', 3))
+    const facts = [
+      ...Array.from({ length: 9 }, (_, i) => asks(`f${i}`, 'when', 3)),
+      asks('other', 'who')
+    ]
     const cards = cardsOf(facts)
     const board = buildBoard(cards, { columns: 1, rows: 5 })
     expect(board.clueCount).toBe(5)
@@ -202,24 +214,23 @@ describe('dealing the grid', () => {
     const b = buildBoard(cardsOf(facts))
     expect(placed(a).map(c => c.card.id)).toEqual(placed(b).map(c => c.card.id))
   })
-
-  it('deals nothing from a plain flashcard deck', () => {
-    expect(buildBoard(cardsOf([flashcard('a'), flashcard('b')])).clueCount).toBe(0)
-  })
 })
 
-describe('whether to offer the game at all', () => {
+describe('whether a board can be dealt at all', () => {
+  // The real gate is whether `buildBoard` places anything — which is what the
+  // game definition asks. A separate `isPlayable` predicate answering the same
+  // question from the same inputs was a second answer waiting to disagree.
   it('needs more than one kind of question', () => {
-    expect(isPlayable(cardsOf([asks('a', 'when'), asks('b', 'when')]))).toBe(false)
-    expect(isPlayable(cardsOf([asks('a', 'when'), asks('b', 'who')]))).toBe(true)
+    expect(buildBoard(cardsOf([asks('a', 'when'), asks('b', 'when')])).clueCount).toBe(0)
+    expect(buildBoard(cardsOf([asks('a', 'when'), asks('b', 'who')])).clueCount).toBe(2)
   })
 
-  it('says no to a deck of flashcards', () => {
-    expect(isPlayable(cardsOf([flashcard('a')]))).toBe(false)
+  it('deals nothing from a deck of flashcards', () => {
+    expect(buildBoard(cardsOf([flashcard('a'), flashcard('b')])).clueCount).toBe(0)
   })
 
-  it('says yes to a set with real slots', () => {
-    expect(isPlayable(cardsOf([authored('a')]))).toBe(true)
+  it('deals from a set with real slots', () => {
+    expect(buildBoard(cardsOf([authored('a'), authored('b')])).clueCount).toBeGreaterThan(0)
   })
 })
 
@@ -244,7 +255,9 @@ describe('telling the author what is missing', () => {
   })
 
   it('ignores a namespace belonging to some other game', () => {
+    // Nothing this game ships reads a namespace any more — columns come from
+    // the content — so a fact tagged for a future mode is just a flashcard.
     const other = fact({ id: 'x', attrs: { nameThatMap: { region: 'x' } } })
-    expect(isPlayable(cardsOf([other]))).toBe(false)
+    expect(buildBoard(cardsOf([other])).clueCount).toBe(0)
   })
 })
