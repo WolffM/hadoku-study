@@ -94,6 +94,34 @@ export interface StudySetDetail extends StudySet {
   facts: StudyFact[]
 }
 
+/**
+ * How one question stands, in both scopes.
+ *
+ * `global` is everyone's and starts from the question's `seedTier`. `local` is
+ * yours and starts from whatever `global` said the first time you attempted
+ * that question, after which nothing overwrites it. They are returned for
+ * EVERY question in a set, played or not — an unplayed one sits at a real
+ * estimate rather than being absent, so a client never has to invent a
+ * starting value and never has a second copy of the seeding rule.
+ */
+export interface QuestionRating {
+  factId: string
+  variantKey: string
+  global: number
+  local: number
+  globalPlays: number
+  yourPlays: number
+}
+
+/** One self-graded answer, on its way to the ledger. */
+export interface AttemptInput {
+  factId: string
+  variantKey: string
+  result: CardResult
+  /** What was typed, when anything was. */
+  response?: string | null
+}
+
 export interface StoredProgress {
   queue: string[]
   results: Record<string, CardResult>

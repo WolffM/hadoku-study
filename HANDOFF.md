@@ -169,6 +169,101 @@ silently, on save, in exactly the sets that had the most work in them. Editing
 rich facts properly is Phase 3; until then the file is their editor, which
 works because the export is the import.
 
+## Difficulty drifts, and there is no player rating
+
+Every question carries a rating in two scopes, and both move on every answer.
+
+**There is no player rating**, deliberately. What we want to learn is how hard
+a QUESTION is, not how good you are. So elo's opponent is swapped: the
+adversary is **the field** — the mean rating of the set — and a question "wins"
+the match when you miss it. That gives cards ranked against each other while
+keeping the property that makes elo self-correcting.
+
+```
+E  = 1 / (1 + 10 ** ((poolMean - R) / 400))   // chance this card beats the field
+S  = missed ? 1 : 0
+K  = 40 / (1 + plays / 8)                     // 40 when new, ~12 by 20 plays
+M  = min(3, 1 + 0.5 * (run - 1))              // consecutive identical outcomes
+
+R' = clamp(round(R + K * M * (S - E)), 600, 1800)
+```
+
+Three knobs, each earning its place. **K** is confidence — twenty plays of
+evidence are not overturned by one. **M** is the streak, and it counts the
+attempt that extends it (scoring at the previous run length would lag by one,
+so a two-attempt streak would never get a multiplier at all). **E** is the
+field: missing a question already rated brutal confirms what we knew and moves
+almost nothing, while _nailing_ it is a genuine surprise and drops it hard.
+
+`rating.ts` is pure and its six worked examples are pinned in `rating.test.ts`.
+Three of the numbers in the original plan were wrong when written by hand,
+which is why they are computed rather than asserted from memory.
+
+### Global seeds; local takes over, per question
+
+- **Global** starts at the question's `seedTier` (tiers 1–5 map to 1000–1400)
+  and moves on every signed-in reader's answer.
+- **Local** starts at whatever **global** says the first time YOU attempt that
+  question, and after that nothing overwrites it.
+
+Per QUESTION, not per set, and that is better than the original plan's
+"copy everything on first engagement": a question you have never seen still
+starts from whatever global has since learned about it, instead of being frozen
+at what global said the day you first opened the set.
+
+**Nothing is materialised.** A question with no rating row is not missing a
+value — it sits at a real estimate, computed on read. That is what lets a set
+be played without first writing a row for every question in it, and it is why
+`GET /sets/{id}/ratings` performs no writes.
+
+The pool mean is computed **per scope**: local ratings are measured against
+your field, global against everyone's. Measuring a local rating against the
+global mean would drag all of your ratings toward a population you are not part
+of, which is the opposite of what a personal rating is for. It is also held
+FIXED across a batch, so an answer's effect does not depend on the order the
+others happened to arrive in.
+
+### A board row is a rank, not a stored tier
+
+`seedTier` seeds a rating and is never read again once a question has one. The
+ROW comes from ordering a column's questions against each other at deal time —
+which is the whole reason a board responds to play. A question you have started
+getting right slides down the board on its own.
+
+Two rules fall out of that:
+
+- **A board is DEALT once and never re-sorted.** The ratings are fetched on
+  entry, held for the session, and deliberately not refreshed from the answers
+  being recorded. Re-ranking mid-game would slide tiles out from under a thumb
+  already moving toward one, and the point of a rating is where it puts a
+  question _next_ time.
+- **One fact may be asked only once per board.** A fact asked four ways is
+  normal content, so this is enforced in `buildBoard` rather than left to the
+  author — and it is claimed _as the column is filled_, not filtered once up
+  front, or two variants of one fact both slip into the same column.
+
+A column with more than five questions is **spanned**, not truncated: taking
+the first five would build a board out of the five you already know.
+
+### Every answer reaches the ledger, or waits for one that does
+
+`recordAttempt` in `src/state/attempts.ts` is the single path both games call.
+A mode that forgot to record would look completely healthy — it plays, it
+grades, it just teaches the system nothing — so a new game gets recording by
+construction rather than by remembering.
+
+A failed POST is queued in localStorage and flushed on the **same request** as
+the next answer, oldest first, so a streak that spans an offline patch is still
+a streak. The queue is cleared _before_ the send precisely so a failure
+re-queues the batch once rather than duplicating the held copies. It never
+throws: the caller is a grade handler mid-game.
+
+**Signed-out readers write nothing.** No identity means no row to attribute an
+attempt to and no way to tell one anonymous reader from a thousand, so letting
+them move global ratings would be letting an unbounded, unattributable
+population vote. Their board still ranks — by `seedTier`, which is exactly how
+it ranked before ratings existed.
+
 ## A set is one file, and that is load-bearing
 
 Sets move between the app, a script and an agent as a single JSON document, and

@@ -5,7 +5,15 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { buildBoard, isPlayable, missingForBoard, pointsFor, readBoardAttrs } from './model'
+import {
+  TIERS,
+  buildBoard,
+  isPlayable,
+  missingForBoard,
+  pointsFor,
+  readBoardAttrs,
+  spread
+} from './model'
 import { toPlayCards } from '../../model/playCards'
 import { authored, clue, detailSet, fact, flashcard } from '../../testing/fixtures'
 
@@ -49,13 +57,34 @@ describe("reading this game's namespace off a question", () => {
 })
 
 describe('building the grid', () => {
-  it('places each question at its category and its seed tier', () => {
-    const board = buildBoard(clueCards(['a', 'Places', 1], ['b', 'People', 3]))
-    expect(board.categories).toEqual(['Places', 'People'])
+  it('assigns rows by RANK, not by the seed tier stored on a question', () => {
+    // The row is not a property of a question — it is where that question sits
+    // against the others in its column. That is what lets a board respond to
+    // play at all.
+    const board = buildBoard(clueCards(['a', 'Places', 2], ['b', 'Places', 4]))
     expect(board.cells.get('Places')?.get(1)?.card.factId).toBe('a')
-    expect(board.cells.get('People')?.get(3)?.card.factId).toBe('b')
-    expect(board.clueCount).toBe(2)
-    expect(board.maxScore).toBe(400)
+    expect(board.cells.get('Places')?.get(2)?.card.factId).toBe('b')
+    // Not rows 2 and 4, which is where their seed tiers would have put them.
+    expect(board.cells.get('Places')?.get(4)).toBeUndefined()
+  })
+
+  it('re-sorts when the ranking changes, which is the whole point', () => {
+    const cards = clueCards(['a', 'Places', 1], ['b', 'Places', 5])
+    // `a` was the easy one. Say the reader has been missing it and its rating
+    // has overtaken `b`.
+    const learned = new Map([
+      [cards[0].id, 1500],
+      [cards[1].id, 900]
+    ])
+    const board = buildBoard(cards, card => learned.get(card.id) ?? 0)
+    expect(board.cells.get('Places')?.get(1)?.card.factId).toBe('b')
+    expect(board.cells.get('Places')?.get(2)?.card.factId).toBe('a')
+  })
+
+  it('fills a short column from the bottom row up', () => {
+    const board = buildBoard(clueCards(['a', 'Places', 3], ['b', 'Places', 4]))
+    expect([...(board.cells.get('Places')?.keys() ?? [])]).toEqual([1, 2])
+    expect(board.maxScore).toBe(300)
   })
 
   it('orders columns by first appearance, which is the author’s order', () => {
@@ -69,32 +98,87 @@ describe('building the grid', () => {
     expect(board.unplaced.map(c => c.factId)).toEqual(['b'])
   })
 
-  it('keeps the first of two questions contesting one cell', () => {
-    // Common in v2: a fact asked four ways puts four questions in one category
-    // at one tier, and exactly one belongs on the grid. Letting the last win
-    // would make the board depend on question order in a way nobody can see.
-    const board = buildBoard(clueCards(['a', 'Places', 1], ['b', 'Places', 1]))
-    expect(board.cells.get('Places')?.get(1)?.card.factId).toBe('a')
-    expect(board.unplaced.map(c => c.factId)).toEqual(['b'])
-    expect(board.clueCount).toBe(1)
-  })
-
-  it('refuses a tier outside the five rungs the grid has', () => {
-    const cards = cardsOf([
-      {
-        ...clue('a', 'Places', 1),
-        variants: [{ ...clue('a', 'Places', 1).variants[0], seedTier: 9 }]
-      }
-    ])
-    expect(buildBoard(cards).clueCount).toBe(0)
-  })
-
-  it('places every question a multi-slot fact produces', () => {
-    // Each is a separate thing to get right, so each competes for its own cell.
+  it('asks a fact only ONCE across the whole board', () => {
+    // "Where did Luther meet Charles V" and "who did Luther meet at Worms" are
+    // the same fact wearing two hats. A fact asked four ways is normal content,
+    // so this is enforced rather than left to the author.
     const board = buildBoard(cardsOf([authored('a', 'Places')]))
-    expect(board.clueCount).toBe(2)
-    expect(board.cells.get('Places')?.get(2)).toBeDefined()
-    expect(board.cells.get('Places')?.get(4)).toBeDefined()
+    expect(board.clueCount).toBe(1)
+    expect(board.unplaced).toHaveLength(1)
+    expect(board.unplaced[0].factId).toBe('a')
+  })
+
+  it('holds that rule across columns too', () => {
+    // Unreachable today — attrs live on the FACT, so every variant of a fact
+    // shares its category. It becomes reachable in phase 4, when a category is
+    // a selector over the asked slot and one fact's questions genuinely land
+    // in different columns. Built by hand here so the rule is pinned before
+    // the content that needs it exists.
+    const [placesCard, peopleCard] = cardsOf([authored('a', 'Places')])
+    const board = buildBoard([
+      placesCard,
+      { ...peopleCard, attrs: { board: { category: 'People' } } }
+    ])
+    expect(board.clueCount).toBe(1)
+    expect(board.categories).toEqual(['Places', 'People'])
+  })
+
+  it('spans a long column rather than taking its five easiest', () => {
+    // Otherwise a category with twenty questions builds a board out of the
+    // twenty per cent you already know, which is not a board.
+    const many = clueCards(
+      ...Array.from({ length: 9 }, (_, i): [string, string, number] => [`f${i}`, 'Places', 1])
+    )
+    const ranks = new Map(many.map((card, index) => [card.id, index]))
+    const board = buildBoard(many, card => ranks.get(card.id) ?? 0)
+    const placed = TIERS.map(tier => board.cells.get('Places')?.get(tier)?.card.factId)
+    expect(placed).toEqual(['f0', 'f2', 'f4', 'f6', 'f8'])
+    expect(board.unplaced).toHaveLength(4)
+  })
+
+  it('always fills five rows when there are five to fill', () => {
+    // Rounding can collide on short lists — six questions into five rows — and
+    // a silently four-row column would look like missing content.
+    for (const count of [5, 6, 7, 8, 11, 25]) {
+      const many = clueCards(
+        ...Array.from({ length: count }, (_, i): [string, string, number] => [`f${i}`, 'C', 1])
+      )
+      const ranks = new Map(many.map((card, index) => [card.id, index]))
+      const board = buildBoard(many, card => ranks.get(card.id) ?? 0)
+      expect(board.clueCount, `${count} questions`).toBe(5)
+    }
+  })
+
+  it('breaks a rating tie the same way every render', () => {
+    // Two questions at the same rating must not swap places between renders —
+    // a board that reshuffles under a thumb is worse than one ordered badly.
+    const cards = clueCards(['a', 'Places', 3], ['b', 'Places', 3])
+    const first = buildBoard(cards, () => 1200)
+    const second = buildBoard(cards, () => 1200)
+    expect(first.cells.get('Places')?.get(1)?.card.factId).toBe('a')
+    expect(second.cells.get('Places')?.get(1)?.card.factId).toBe('a')
+  })
+})
+
+describe('spread', () => {
+  it('returns everything when there is nothing to drop', () => {
+    expect(spread([1, 2, 3], 5)).toEqual([1, 2, 3])
+  })
+
+  it('keeps both ends, so the ladder still spans the range', () => {
+    const picked = spread([0, 1, 2, 3, 4, 5, 6, 7, 8], 5)
+    expect(picked[0]).toBe(0)
+    expect(picked[picked.length - 1]).toBe(8)
+  })
+
+  it('never returns duplicates', () => {
+    for (let n = 5; n <= 30; n += 1) {
+      const picked = spread(
+        Array.from({ length: n }, (_, i) => i),
+        5
+      )
+      expect(new Set(picked).size, `${n} items`).toBe(5)
+    }
   })
 })
 

@@ -19,19 +19,65 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { logger } from '@wolffm/logger/client'
 import type { GameProps } from '../types'
+import type { QuestionRating } from '../../api/types'
 import { toPlayCards } from '../../model/playCards'
-import { TIERS, buildBoard, pointsFor, type BoardClue } from './model'
+import { indexRatings, recordAttempt } from '../../state/attempts'
+import { TIERS, buildBoard, bySeedTier, pointsFor, type BoardClue, type RankBy } from './model'
 
 /** How a cell was resolved. Absent means unplayed. */
 type Outcome = 'got' | 'missed'
 
-export function Board({ set, onExit }: GameProps) {
-  const board = useMemo(() => buildBoard(toPlayCards(set.facts)), [set.facts])
+export function Board({ set, client, syncEnabled, onExit }: GameProps) {
+  const cards = useMemo(() => toPlayCards(set.facts), [set.facts])
+
+  /**
+   * The ratings this board was DEALT from.
+   *
+   * Fetched once, held for the session, and deliberately never refreshed from
+   * the answers recorded below. A board is a deal: re-ranking it as you play
+   * would slide tiles out from under a thumb already moving toward one, and
+   * the point of the rating is where it puts a question NEXT time.
+   *
+   * `null` means still loading; an empty map means there are none to have —
+   * a signed-out reader, or a failed fetch — and the board falls back to the
+   * author's seed order, which is exactly how it ranked before ratings existed.
+   */
+  const [ratings, setRatings] = useState<Map<string, QuestionRating> | null>(() =>
+    syncEnabled ? null : new Map()
+  )
+
+  useEffect(() => {
+    if (!syncEnabled) return
+    let cancelled = false
+    void client
+      .getRatings(set.id)
+      .then(fetched => {
+        if (!cancelled) setRatings(indexRatings(fetched))
+      })
+      .catch(() => {
+        // Offline, or the endpoint is unhappy. Seed order is a real board, so
+        // there is nothing to tell the reader and nothing to stop.
+        if (!cancelled) setRatings(new Map())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [client, set.id, syncEnabled])
+
+  const board = useMemo(() => {
+    if (ratings === null) return null
+    // All-or-nothing per reader: the endpoint returns an entry for every
+    // question in the set, so a board is never half-sorted by rating and half
+    // by seed tier.
+    const rankBy: RankBy =
+      ratings.size > 0 ? card => ratings.get(card.id)?.local ?? card.seedTier : bySeedTier
+    return buildBoard(cards, rankBy)
+  }, [cards, ratings])
   // question id -> clue, so scoring is a lookup rather than a scan for every
   // graded answer.
   const clues = useMemo(() => {
     const index = new Map<string, BoardClue>()
-    for (const column of board.cells.values()) {
+    for (const column of board?.cells.values() ?? []) {
       for (const clue of column.values()) index.set(clue.card.id, clue)
     }
     return index
@@ -51,20 +97,20 @@ export function Board({ set, onExit }: GameProps) {
   )
 
   const playedCount = Object.keys(outcomes).length
-  const finished = board.clueCount > 0 && playedCount === board.clueCount
+  const finished = board !== null && board.clueCount > 0 && playedCount === board.clueCount
 
   // A completed board is the one thing here worth recording: it is the signal
   // that someone actually PLAYED rather than opened and left, and no HTTP log
   // can see it — the whole game runs client-side after the set is fetched.
   useEffect(() => {
-    if (!finished) return
+    if (!finished || !board) return
     logger.event('study.board.completed', {
       setId: set.id,
       score,
       maxScore: board.maxScore,
       clues: board.clueCount
     })
-  }, [board.clueCount, board.maxScore, finished, score, set.id])
+  }, [board, finished, score, set.id])
 
   const openClue = useCallback((clue: BoardClue) => {
     setOpen(clue)
@@ -80,9 +126,15 @@ export function Board({ set, onExit }: GameProps) {
     (outcome: Outcome) => {
       if (!open) return
       setOutcomes(current => ({ ...current, [open.card.id]: outcome }))
+      // Fire and forget: `recordAttempt` never throws and queues on failure,
+      // so a bookkeeping problem can never interrupt a game in progress.
+      void recordAttempt(
+        { client, setId: set.id, game: 'board', enabled: syncEnabled },
+        { factId: open.card.factId, variantKey: open.card.variantKey, result: outcome }
+      )
       closeClue()
     },
-    [closeClue, open]
+    [client, closeClue, open, set.id, syncEnabled]
   )
 
   // Escape closes the sheet, matching the drill's exit key. Bound while a clue
@@ -107,6 +159,17 @@ export function Board({ set, onExit }: GameProps) {
     setOutcomes({})
     closeClue()
   }, [closeClue])
+
+  if (board === null) {
+    // Brief, and only on entry. The set is already in memory; this is one
+    // request, and waiting for it is what guarantees the grid is dealt before
+    // it is drawn rather than re-sorting a moment later.
+    return (
+      <div className="panel">
+        <p className="muted">Dealing the board…</p>
+      </div>
+    )
+  }
 
   if (board.clueCount === 0) {
     return (

@@ -33,6 +33,7 @@ import type { AppEnv } from './types.js';
 import { healthRoutes } from './routes/health.js';
 import { setRoutes } from './routes/sets.js';
 import { progressRoutes } from './routes/progress.js';
+import { attemptRoutes } from './routes/attempts.js';
 
 interface AppContext {
 	Bindings: AppEnv;
@@ -111,6 +112,23 @@ slot name works and simply needs a \`prompt\`.
 Responses carry a \`variants\` array per fact, each with a stable \`key\`. Those
 keys are derived here and only here, so read them rather than building them.
 
+## Difficulty drifts
+Every question carries a rating, in two scopes. \`global\` is everyone's and
+starts from the question's \`seedTier\`; \`local\` is yours and starts from
+whatever \`global\` says the first time you attempt that question, after which
+nothing overwrites it. Global exists to make first contact well-ordered; local
+is what actually decides what you get asked.
+
+There is no player rating. The opponent is THE FIELD — the mean rating of the
+set — and a question "wins" when you miss it. So a question already rated hard
+barely moves when you miss it, and drops sharply when you do not. Streaks of
+identical outcomes count for more; a well-played question moves less than a new
+one.
+
+\`POST /sets/{id}/attempts\` records answers and returns the new standing.
+Grading is self-reported, and open-ended and discrete questions travel the
+identical path.
+
 ## A set is a single file
 \`GET /sets/{id}\` returns the whole set, facts included, and unknown fields are
 stripped on the way back in — so the exported object is a valid import body
@@ -150,6 +168,7 @@ silently discard a set's play history.
 		{ name: 'Health', description: 'Health check endpoints' },
 		{ name: 'Sets', description: 'Set CRUD and publishing' },
 		{ name: 'Progress', description: 'Where a reader left off in a set' },
+		{ name: 'Ratings', description: 'How hard each question is, and what your answers do to it' },
 	],
 });
 
@@ -190,6 +209,7 @@ function createApp() {
 	app.route('/study/api', healthRoutes);
 	app.route('/study/api', setRoutes);
 	app.route('/study/api', progressRoutes);
+	app.route('/study/api', attemptRoutes);
 
 	// --------------------------------------------------------------------------
 	// OpenAPI Spec Endpoint
@@ -264,6 +284,17 @@ export interface OpenAPIDocument {
 	paths: Record<string, Record<string, OpenAPIOperation>>;
 	components: {
 		securitySchemes?: Record<string, { type: string; in?: string; name?: string }>;
+		/**
+		 * The named schemas an agent reads to learn the shapes — `Fact`,
+		 * `Variant`, `Rating` and the rest.
+		 *
+		 * Loosely typed on purpose: the generator produces JSON Schema, and
+		 * restating that structure here would be a second, weaker copy of it
+		 * that goes stale the first time a zod feature is used that it does not
+		 * model. Declared at all so a consumer can reach the map without
+		 * casting the whole document away.
+		 */
+		schemas?: Record<string, unknown>;
 	};
 }
 

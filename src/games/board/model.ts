@@ -12,22 +12,25 @@
  * once someone has done the authoring.
  *
  * Two halves, from two places. The COLUMN comes from the game's own namespace
- * in the fact's attrs, because a column label is genuinely board-specific. The
- * ROW comes from the question's `seedTier`, which is not — a tier seeds a
- * rating, and ratings belong to every mode. That split is why `difficulty`
- * left this namespace in migration 0003.
+ * in the fact's attrs, because a column label is genuinely board-specific.
+ * The ROW is not stored at all — it is a RANK, assigned here by ordering a
+ * column's questions against each other. That is what makes a board respond to
+ * play: as your ratings drift, the same questions re-sort themselves, and a
+ * question you have started getting right slides down the board on its own.
  */
 
 import type { PlayCard } from '../../model/playCards'
 
-/** Board rows. Matches MAX_SEED_TIER in the worker. */
+/** Board rows. Five is what a Jeopardy board is, and what fits a phone. */
 export const TIERS = [1, 2, 3, 4, 5] as const
 
 /**
- * A tier's score.
+ * A row's score.
  *
- * Points are computed here rather than stored, so a board can be rescaled
- * without rewriting a single clue.
+ * Points come from the ROW, not from the rating. Elo decides which question
+ * lands in a cell; the cell is still worth what a Jeopardy cell is worth, so a
+ * score means the same thing from one session to the next and a total out of
+ * 2500 is comparable. The rating stays out of the player's face.
  */
 export const pointsFor = (tier: number): number => tier * 100
 
@@ -38,7 +41,7 @@ export interface BoardAttrs {
   category: string
 }
 
-/** A question that can sit on the grid. */
+/** A question placed on the grid. `tier` is its row, decided here. */
 export interface BoardClue {
   card: PlayCard
   category: string
@@ -61,64 +64,129 @@ export function readBoardAttrs(card: PlayCard): BoardAttrs | null {
   return { category: category.trim() }
 }
 
-export function toBoardClue(card: PlayCard): BoardClue | null {
-  const attrs = readBoardAttrs(card)
-  if (!attrs) return null
-  if (!Number.isInteger(card.seedTier) || card.seedTier < 1 || card.seedTier > TIERS.length) {
-    return null
-  }
-  return { card, category: attrs.category, tier: card.seedTier }
-}
+/** Whether a question can appear on a board at all. */
+export const isClue = (card: PlayCard): boolean => readBoardAttrs(card) !== null
+
+/**
+ * How hard a question is, for ordering a column.
+ *
+ * Your LOCAL rating where one is known, and it always is for a signed-in
+ * reader — the ratings endpoint returns an entry for every question in a set,
+ * played or not. A signed-out reader has none at all, so the fallback is the
+ * author's `seedTier`, which is the same ordering the board had before ratings
+ * existed. There is deliberately no third case: ratings are all-or-nothing per
+ * reader, so a board can never be half-sorted by one measure and half by
+ * another.
+ */
+export type RankBy = (card: PlayCard) => number
+
+export const bySeedTier: RankBy = card => card.seedTier
 
 export interface BoardModel {
   /** Column labels, in first-appearance order — which is the author's order,
    *  since questions arrive in fact position order. */
   categories: string[]
-  /** category -> tier -> the clue, where one exists. A board with holes is a
-   *  normal in-progress state, not an error. */
+  /** category -> row -> the clue. A board with holes is a normal in-progress
+   *  state, not an error. */
   cells: Map<string, Map<number, BoardClue>>
   clueCount: number
-  /** Questions carrying no board metadata. They stay drillable and simply do
-   *  not appear on the grid. */
+  /** Questions that did not make the grid — untagged, or squeezed out of a
+   *  full column. They stay drillable. */
   unplaced: PlayCard[]
   maxScore: number
 }
 
-export function buildBoard(cards: PlayCard[]): BoardModel {
+/**
+ * Pick `count` items spanning a sorted list.
+ *
+ * Taking the first five of a long column would build a board out of its five
+ * easiest questions, which is not a board. Spreading across the range keeps the
+ * ladder a ladder however much content a category has.
+ *
+ * Phase 4 replaces this with a real generator that balances columns against
+ * each other; until then, spanning one column at a time is the honest version.
+ */
+export function spread<T>(items: T[], count: number): T[] {
+  if (items.length <= count) return [...items]
+  const picked = new Set<number>()
+  for (let i = 0; i < count; i += 1) {
+    picked.add(Math.round((i * (items.length - 1)) / (count - 1)))
+  }
+  // Rounding can collide on short lists (six items into five rows), which would
+  // silently render a four-row column. Backfill in order so the count always
+  // holds.
+  for (let i = 0; picked.size < count && i < items.length; i += 1) picked.add(i)
+  return [...picked].sort((a, b) => a - b).map(index => items[index])
+}
+
+export function buildBoard(cards: PlayCard[], rankBy: RankBy = bySeedTier): BoardModel {
   const categories: string[] = []
-  const cells = new Map<string, Map<number, BoardClue>>()
+  const grouped = new Map<string, PlayCard[]>()
   const unplaced: PlayCard[] = []
+
+  for (const card of cards) {
+    const attrs = readBoardAttrs(card)
+    if (!attrs) {
+      unplaced.push(card)
+      continue
+    }
+    let column = grouped.get(attrs.category)
+    if (!column) {
+      column = []
+      grouped.set(attrs.category, column)
+      categories.push(attrs.category)
+    }
+    column.push(card)
+  }
+
+  const cells = new Map<string, Map<number, BoardClue>>()
+  // Board-wide, not per column. One fact may only be asked ONCE on a board:
+  // "where did Luther meet Charles V" and "who did Luther meet at Worms" are
+  // the same fact wearing two hats, and asking both is asking the same thing
+  // twice. Enforced here rather than left to the author, because a fact asked
+  // four ways is normal content, not a mistake.
+  const claimedFacts = new Set<string>()
   let clueCount = 0
   let maxScore = 0
 
-  for (const card of cards) {
-    const clue = toBoardClue(card)
-    if (!clue) {
-      unplaced.push(card)
-      continue
+  for (const category of categories) {
+    const pool = grouped.get(category) ?? []
+    const order = new Map(pool.map((card, index) => [card.id, index]))
+    const sorted = [...pool].sort(
+      // Tie-break on the author's order, so two questions at the same rating
+      // land the same way every render rather than depending on sort internals.
+      (a, b) => rankBy(a) - rankBy(b) || (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)
+    )
+
+    // Deduped as we walk, not filtered once up front. Filtering against
+    // `claimedFacts` alone would only block a fact ACROSS columns — two
+    // variants of one fact inside the SAME column would both pass, because
+    // neither is claimed at the moment the filter runs, and the board would
+    // ask one fact twice in one row of tiles.
+    const takenHere = new Set<string>()
+    const eligible: PlayCard[] = []
+    for (const card of sorted) {
+      if (claimedFacts.has(card.factId) || takenHere.has(card.factId)) continue
+      takenHere.add(card.factId)
+      eligible.push(card)
     }
-    let column = cells.get(clue.category)
-    if (!column) {
-      column = new Map<number, BoardClue>()
-      cells.set(clue.category, column)
-      categories.push(clue.category)
+
+    const chosen = spread(eligible, TIERS.length)
+    const chosenIds = new Set(chosen.map(card => card.id))
+
+    const column = new Map<number, BoardClue>()
+    chosen.forEach((card, index) => {
+      const tier = TIERS[index]
+      claimedFacts.add(card.factId)
+      column.set(tier, { card, category, tier })
+      clueCount += 1
+      maxScore += pointsFor(tier)
+    })
+    cells.set(category, column)
+
+    for (const card of sorted) {
+      if (!chosenIds.has(card.id)) unplaced.push(card)
     }
-    // First clue wins a contested cell. Two clues at the same category and tier
-    // is an authoring mistake with no right answer, and silently showing the
-    // last one would make the board depend on question order in a way nobody
-    // can see. The loser stays in the deck.
-    //
-    // This gets common in v2 and stays correct: a fact asked four ways puts
-    // four questions in one category at one tier, and exactly one of them
-    // belongs on the grid. Phase 4's generator replaces this with a real
-    // choice; until then, first-wins is the honest placeholder.
-    if (column.has(clue.tier)) {
-      unplaced.push(card)
-      continue
-    }
-    column.set(clue.tier, clue)
-    clueCount += 1
-    maxScore += pointsFor(clue.tier)
   }
 
   return { categories, cells, clueCount, unplaced, maxScore }
@@ -126,7 +194,7 @@ export function buildBoard(cards: PlayCard[]): BoardModel {
 
 /** Whether a set is worth offering "Play as board" for at all. */
 export function isPlayable(cards: PlayCard[]): boolean {
-  return cards.some(card => toBoardClue(card) !== null)
+  return cards.some(isClue)
 }
 
 /**
@@ -138,7 +206,7 @@ export function isPlayable(cards: PlayCard[]): boolean {
 export function missingForBoard(cards: PlayCard[]): string | null {
   const total = cards.length
   if (total === 0) return 'Add some facts first.'
-  const tagged = cards.filter(card => toBoardClue(card) !== null).length
+  const tagged = cards.filter(isClue).length
   if (tagged === 0) {
     return 'Give facts a category to play this set as a board.'
   }

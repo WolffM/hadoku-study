@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { StudyClient } from '../api/client'
 import type { CardResult, StudySetDetail } from '../api/types'
 import { toPlayCards } from '../model/playCards'
+import { recordAttempt } from '../state/attempts'
 import { FlipCard } from '../components/FlipCard'
 import {
   clearLocal,
@@ -61,6 +62,13 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
   const complete = isComplete(state)
   const summary = summarize(state, cards.length)
 
+  // Derived here, above the grade handler, rather than after the early returns
+  // it used to sit below. Recording an answer needs to know WHICH question was
+  // answered, and the alternative — reaching into the setState updater for the
+  // queue head — would fire the request twice under StrictMode's double
+  // invocation and record every answer in development twice over.
+  const currentCard = state.queue[0] ? (cardsById.get(state.queue[0]) ?? null) : null
+
   useProgressSync(client, complete ? null : state, syncEnabled)
 
   // ------------------------------------------------------------------------
@@ -109,11 +117,26 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
     if (syncEnabled) void client.clearProgress(set.id).catch(() => undefined)
   }, [cleared, client, complete, set.id, syncEnabled])
 
-  const applyGrade = useCallback((result: CardResult) => {
-    touched.current = true
-    setFlipped(false)
-    setState(current => grade(current, result))
-  }, [])
+  const applyGrade = useCallback(
+    (result: CardResult) => {
+      touched.current = true
+      setFlipped(false)
+      if (currentCard) {
+        // Fire and forget: `recordAttempt` never throws and queues on failure,
+        // so a bookkeeping problem can never interrupt a pass.
+        void recordAttempt(
+          { client, setId: set.id, game: 'drill', enabled: syncEnabled },
+          {
+            factId: currentCard.factId,
+            variantKey: currentCard.variantKey,
+            result
+          }
+        )
+      }
+      setState(current => grade(current, result))
+    },
+    [client, currentCard, set.id, syncEnabled]
+  )
 
   const restart = useCallback(() => {
     touched.current = true
@@ -184,10 +207,7 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
     )
   }
 
-  const currentId = state.queue[0]
-  const card = currentId ? cardsById.get(currentId) : undefined
-
-  if (!card) {
+  if (!currentCard) {
     // reconcile() guarantees every queued id exists, so this is unreachable in
     // practice — but rendering nothing beats rendering a blank card, and it
     // keeps the type honest without a non-null assertion.
@@ -229,10 +249,10 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
 
       <div className="drill__stage">
         <FlipCard
-          key={`${card.id}-${done}`}
-          front={card.front}
-          back={card.back}
-          context={card.given}
+          key={`${currentCard.id}-${done}`}
+          front={currentCard.front}
+          back={currentCard.back}
+          context={currentCard.given}
           flipped={flipped}
           onFlip={() => setFlipped(f => !f)}
           onGrade={applyGrade}

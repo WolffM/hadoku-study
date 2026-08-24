@@ -9,7 +9,14 @@
 
 import { logger } from '@wolffm/logger/client'
 import { getSessionId } from './session'
-import type { FactInput, StoredProgress, StudySet, StudySetDetail } from './types'
+import type {
+  AttemptInput,
+  FactInput,
+  QuestionRating,
+  StoredProgress,
+  StudySet,
+  StudySetDetail
+} from './types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -190,6 +197,33 @@ export function createClient(base: string) {
 
     deleteSet: (id: string) =>
       request<{ setId: string }>(trimmed, `/sets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+    /**
+     * How every question in a set stands, played or not.
+     *
+     * Fetched once when a game starts rather than per question: the ordering a
+     * board renders has to be settled BEFORE the grid is drawn, or the tiles
+     * reshuffle under a thumb already moving toward one.
+     */
+    getRatings: (id: string) =>
+      request<{ ratings: QuestionRating[] }>(
+        trimmed,
+        `/sets/${encodeURIComponent(id)}/ratings`
+      ).then(d => d.ratings),
+
+    /**
+     * Record answers and get back what they did to the ratings.
+     *
+     * One per answer in the normal case. `keepalive` because a grade fired as
+     * a phone locks is exactly the one worth not losing, and a plain fetch
+     * would be cancelled when the page freezes.
+     */
+    recordAttempts: (id: string, game: string, attempts: AttemptInput[]) =>
+      request<{ ratings: QuestionRating[] }>(trimmed, `/sets/${encodeURIComponent(id)}/attempts`, {
+        method: 'POST',
+        body: JSON.stringify({ game, attempts }),
+        keepalive: true
+      }).then(d => d.ratings),
 
     getProgress: (id: string) =>
       request<{ progress: StoredProgress | null }>(

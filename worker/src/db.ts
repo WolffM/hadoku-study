@@ -2,7 +2,7 @@
  * D1 access helpers and the visibility rules every route shares.
  */
 
-import type { FactRow, ProgressRow, SetRow } from './types.js';
+import type { FactRow, ProgressRow, RatingRow, SetRow } from './types.js';
 
 /** Facts per set. A set is meant to be prefetched whole on entry. */
 export const MAX_FACTS_PER_SET = 500;
@@ -26,6 +26,17 @@ export const MAX_SLOTS_PER_FACT = 12;
 export const MAX_QUESTIONS_PER_FACT = 24;
 /** A slot name. Short: it is an identifier inside a variant key, not prose. */
 export const MAX_SLOT_NAME_LENGTH = 40;
+
+/**
+ * Answers in one POST.
+ *
+ * The client sends one per answer — a board is twenty small writes on a site
+ * with this traffic, and batching to the end of a session means an abandoned
+ * game loses everything it learned. The batch form exists only so a
+ * localStorage outbox can flush what it held while offline, which is why the
+ * cap is modest rather than generous.
+ */
+export const MAX_ATTEMPTS_PER_REQUEST = 50;
 
 /**
  * Serialized `facts.attrs`, in characters.
@@ -168,6 +179,43 @@ export async function listPublishedSets(
 		)
 		.bind(limit, offset)
 		.all<SetWithCount>();
+	return res.results;
+}
+
+/**
+ * Every global rating row belonging to a set.
+ *
+ * Joined through `facts` rather than stored with a `set_id` of its own: a
+ * rating belongs to a QUESTION, and the question's set is a fact of the fact.
+ * Duplicating it here would be a second answer to which set a rating is in,
+ * free to disagree the moment anything moves.
+ */
+export async function loadGlobalRatings(db: D1Database, setId: string): Promise<RatingRow[]> {
+	const res = await db
+		.prepare(
+			`SELECT r.* FROM variant_ratings r
+			 JOIN facts f ON f.id = r.fact_id
+			 WHERE f.set_id = ?1`
+		)
+		.bind(setId)
+		.all<RatingRow>();
+	return res.results;
+}
+
+/** The same, for one reader. */
+export async function loadUserRatings(
+	db: D1Database,
+	setId: string,
+	userId: string
+): Promise<RatingRow[]> {
+	const res = await db
+		.prepare(
+			`SELECT r.* FROM user_variant_ratings r
+			 JOIN facts f ON f.id = r.fact_id
+			 WHERE f.set_id = ?1 AND r.user_id = ?2`
+		)
+		.bind(setId, userId)
+		.all<RatingRow>();
 	return res.results;
 }
 

@@ -29,6 +29,9 @@ hadoku_site/workers/study-api (host worker)
 - `src/routes/health.ts` - Health check endpoint (probes D1)
 - `src/routes/sets.ts` - set + fact CRUD, publish/unpublish
 - `src/variants.ts` - the ONE implementation of fact -> questions
+- `src/factRows.ts` - reading a stored fact's JSON columns, shared by every route
+- `src/rating.ts` - the drift formula, pure and replayable
+- `src/routes/attempts.ts` - recording answers, and how every question stands
 - `src/routes/progress.ts` - a reader's saved place in a set
 
 ## Access model, in one place
@@ -77,6 +80,12 @@ bake this build's fallback phrasings in as though someone had written them.
 so `resolveFactIds` hands each incoming fact back the id it arrived with when
 that id already belongs to the set. Drop the ids and every rating and attempt
 hanging off them is orphaned with no error anywhere.
+
+**Ratings are computed on read, not materialised.** A question with no rating
+row sits at a real estimate: global falls back to `seedTier`, local falls back
+to the current GLOBAL rating. So `GET /sets/{id}/ratings` writes nothing, and a
+set can be played without first inserting a row per question. The pool mean is
+per scope and held fixed across a batch.
 
 `set_progress` is a resume BOOKMARK, not a scheduling record — one row per
 reader, overwritten on every grade, deleted when a pass completes. `attempts`

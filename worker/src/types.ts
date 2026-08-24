@@ -94,6 +94,31 @@ export interface FactRow {
 }
 
 /**
+ * How one question stands, in one scope.
+ *
+ * The same shape backs `variant_ratings` (everybody's) and
+ * `user_variant_ratings` (one reader's), because the arithmetic is identical
+ * and only the population differs. Two row types would be two places to change
+ * when the formula does.
+ *
+ * `user_id` is present only on the per-user table, which is why it is optional
+ * here rather than modelled as a separate interface.
+ */
+export interface RatingRow {
+	user_id?: string;
+	fact_id: string;
+	variant_key: string;
+	rating: number;
+	plays: number;
+	/** Consecutive identical outcomes. On the GLOBAL table this counts across
+	 *  readers, which is meaningful in its own right: three people in a row
+	 *  missing a question says something a single reader's run does not. */
+	run: number;
+	run_result: string | null;
+	updated_at: number;
+}
+
+/**
  * A resume bookmark for ONE pass over a set — NOT a scheduling record.
  *
  * v1 is a plain drill: you walk the set, self-grade each card, and the pass

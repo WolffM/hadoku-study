@@ -67,9 +67,17 @@ describe('availability is decided from the content', () => {
   })
 
   it('summarises what you are about to play', () => {
+    // A lone clue is the easiest in its column, so it takes row 1 and is worth
+    // 100 — whatever seed tier its author gave it. The row is a RANK now, not
+    // a stored property, which is exactly what lets a board respond to play.
     const set = detailSet([clue('c', 'Places', 2)])
     expect(findGame('board')?.availability(set).summary).toContain('1 clue')
-    expect(findGame('board')?.availability(set).summary).toContain('200 points')
+    expect(findGame('board')?.availability(set).summary).toContain('100 points')
+  })
+
+  it('scores a full five-row column at the familiar total', () => {
+    const five = [1, 2, 3, 4, 5].map(tier => clue(`c${tier}`, 'Places', tier))
+    expect(findGame('board')?.availability(detailSet(five)).summary).toContain('1500 points')
   })
 
   it('counts questions rather than facts when the drill offers a set', () => {

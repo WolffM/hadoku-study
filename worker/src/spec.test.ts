@@ -83,4 +83,19 @@ describe('the routes agents need', () => {
 			'put',
 		]);
 	});
+
+	it('exposes the ratings pair, so a mount regression cannot ship silently', () => {
+		// Both were mounted in one line in index.ts. Forgetting that line leaves
+		// every test above green — they iterate whatever paths exist — and the
+		// only symptom in production is a 404 the client swallows.
+		expect(Object.keys(doc.paths['/study/api/sets/{id}/ratings'] ?? {})).toEqual(['get']);
+		expect(Object.keys(doc.paths['/study/api/sets/{id}/attempts'] ?? {})).toEqual(['post']);
+	});
+
+	it('publishes the rating shape, not just the routes', () => {
+		// An agent reading the spec has to be able to see what `global` and
+		// `local` mean without reading this repo.
+		expect(doc.components?.schemas?.Rating).toBeDefined();
+		expect(doc.components?.schemas?.AttemptInput).toBeDefined();
+	});
 });

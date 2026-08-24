@@ -14,6 +14,7 @@ import {
 	MAX_SLOTS_PER_FACT,
 	MAX_SLOT_NAME_LENGTH,
 	MAX_TITLE_LENGTH,
+	MAX_ATTEMPTS_PER_REQUEST,
 } from './db.js';
 import { MAX_SEED_TIER, MIN_SEED_TIER } from './variants.js';
 
@@ -342,6 +343,55 @@ export const UpdateSetInputSchema = z
 	})
 	.openapi('UpdateSetInput');
 
+/**
+ * How one question stands, both ways at once.
+ *
+ * Global and local side by side because they answer different questions and a
+ * reader wants both: global is what the field thinks, local is what YOUR play
+ * has made of it. They start equal and diverge.
+ */
+export const RatingSchema = z
+	.object({
+		factId: z.string().openapi({ example: 'qvv7k2mfjxtd' }),
+		variantKey: z.string().openapi({ example: 'when<what,where,who>' }),
+		/** Everyone's, seeded from `seedTier` until somebody plays it. */
+		global: z.number().int().openapi({ example: 1186 }),
+		/**
+		 * Yours. Equal to `global` until you have attempted this question, then
+		 * it is yours alone — nothing overwrites it again.
+		 */
+		local: z.number().int().openapi({ example: 1174 }),
+		globalPlays: z.number().int().openapi({ example: 12 }),
+		yourPlays: z.number().int().openapi({ example: 3 }),
+	})
+	.openapi('Rating');
+
+/**
+ * One answer, as reported by whoever was playing.
+ *
+ * Self-graded, and that is the whole grading story — open-ended and discrete
+ * questions travel the identical path. `response` is what was typed, when
+ * anything was: it costs nothing now and is the only thing that would make a
+ * retroactive judge possible later.
+ */
+export const AttemptInputSchema = z
+	.object({
+		factId: z.string(),
+		variantKey: z.string(),
+		result: z.enum(['got', 'missed']),
+		response: z.string().trim().max(MAX_FIELD_LENGTH).nullable().optional(),
+	})
+	.openapi('AttemptInput');
+
+export const RecordAttemptsInputSchema = z
+	.object({
+		/** Which mode this was played in. Free-form, because a game can exist
+		 *  before the server has heard of it. */
+		game: z.string().trim().min(1).max(MAX_SLOT_NAME_LENGTH),
+		attempts: z.array(AttemptInputSchema).min(1).max(MAX_ATTEMPTS_PER_REQUEST),
+	})
+	.openapi('RecordAttemptsInput');
+
 export const PutProgressInputSchema = z
 	.object({
 		queue: z.array(z.string()).max(MAX_FACTS_PER_SET * MAX_QUESTIONS_PER_FACT),
@@ -372,5 +422,9 @@ export const ProgressResponseSchema = SuccessResponseSchema(
 export const DeleteResponseSchema = SuccessResponseSchema(z.object({ setId: z.string() })).openapi(
 	'DeleteResponse'
 );
+
+export const RatingsResponseSchema = SuccessResponseSchema(
+	z.object({ ratings: z.array(RatingSchema) })
+).openapi('RatingsResponse');
 
 export type FactInput = z.infer<typeof factInput>;

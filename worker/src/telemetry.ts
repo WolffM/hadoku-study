@@ -88,6 +88,18 @@ export function deckShape(
 }
 
 /**
+ * Someone actually played.
+ *
+ * The one thing about a session no HTTP log can see: edge-router records that
+ * a POST to /attempts happened and returned 200, which says nothing about
+ * whether a set is being STUDIED or merely opened. Counts only — a log line is
+ * not the place for what somebody typed.
+ */
+export function attemptEvent(userId: string, setId: string, game: string, answers: number): void {
+	log.event('study.attempts.recorded', { userId, setId, game, answers });
+}
+
+/**
  * An unhandled failure, with the detail the edge cannot see.
  *
  * The shared `createErrorHandlers` already `console.error`s the raw error,

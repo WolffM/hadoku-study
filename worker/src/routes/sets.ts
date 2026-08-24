@@ -37,10 +37,10 @@ import {
 	UpdateSetInputSchema,
 	type FactInput,
 } from '../schemas.js';
-import { expandFact, type QuestionDecl, type Slots } from '../variants.js';
+import { readFact } from '../factRows.js';
 import { AUTHENTICATED, OPTIONAL_AUTH } from '../security.js';
 import { deckShape, setEvent } from '../telemetry.js';
-import type { AppEnv, FactRow, SetRow } from '../types.js';
+import type { AppEnv, SetRow } from '../types.js';
 
 interface RouteContext {
 	Bindings: AppEnv;
@@ -70,66 +70,6 @@ function toSetJson(row: SetRow, factCount: number, viewerId: string | null) {
 		isOwner: viewerId !== null && row.owner_user_id === viewerId,
 		createdAt: iso(row.created_at),
 		updatedAt: iso(row.updated_at),
-	};
-}
-
-/**
- * Parse a stored JSON object column.
- *
- * Returns null rather than throwing on malformed JSON: these columns are only
- * ever written from a validated serialization, so a bad value means corruption
- * upstream, and failing the whole GET would take the set's readable content
- * down with it.
- */
-function parseObject(raw: string | null): Record<string, unknown> | null {
-	if (raw === null || raw === '') return null;
-	try {
-		const parsed: unknown = JSON.parse(raw);
-		return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-			? (parsed as Record<string, unknown>)
-			: null;
-	} catch {
-		return null;
-	}
-}
-
-/** Same tolerance, for the questions array. Null reads as "not declared",
- *  which `expandFact` already handles by asking every slot in turn. */
-function parseQuestions(raw: string | null): QuestionDecl[] | null {
-	if (raw === null || raw === '') return null;
-	try {
-		const parsed: unknown = JSON.parse(raw);
-		return Array.isArray(parsed) ? (parsed as QuestionDecl[]) : null;
-	} catch {
-		return null;
-	}
-}
-
-/** Slot values are strings by schema; anything else is corruption and is
- *  dropped rather than rendered as "[object Object]" on someone's board. */
-function parseSlots(raw: string | null): Slots {
-	const parsed = parseObject(raw);
-	if (!parsed) return {};
-	const out: Slots = {};
-	for (const [name, value] of Object.entries(parsed)) {
-		if (typeof value === 'string') out[name] = value;
-	}
-	return out;
-}
-
-function toFactJson(row: FactRow) {
-	const slots = parseSlots(row.slots);
-	const questions = parseQuestions(row.questions);
-	return {
-		id: row.id,
-		slots,
-		// What was authored, next to what it resolves to. Both are needed: one
-		// is the content a file carries, the other is what a game renders.
-		questions,
-		detail: row.detail,
-		attrs: parseObject(row.attrs),
-		// Derived here and nowhere else. The client renders what it is handed.
-		variants: expandFact(slots, questions),
 	};
 }
 
@@ -280,7 +220,7 @@ async function existingFactIds(db: D1Database, setId: string): Promise<Set<strin
 
 /** Read a set's facts back as the API returns them. */
 async function factsJson(db: D1Database, setId: string) {
-	return (await listFacts(db, setId)).map(toFactJson);
+	return (await listFacts(db, setId)).map(readFact);
 }
 
 /** A set with its whole content, counted from the facts it is already sending. */
