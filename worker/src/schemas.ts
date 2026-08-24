@@ -423,6 +423,37 @@ export const DeleteResponseSchema = SuccessResponseSchema(z.object({ setId: z.st
 	'DeleteResponse'
 );
 
+/**
+ * A set as a portable document — the thing you hand a research agent.
+ *
+ * Deliberately NOT wrapped in `{success, data}`. This is a file: one URL, one
+ * object, paste-ready. The wrapper is right for an API a program is driving
+ * and wrong for a document a person is copying.
+ *
+ * It is exactly a `ReplaceSetInput` plus two ignorable metadata keys, so what
+ * comes out of here goes straight back in with nothing edited — and the fact
+ * `id`s ride along, which is what keeps a round trip from discarding a set's
+ * rating history.
+ */
+export const SetFileSchema = z
+	.object({
+		$schema: z.string(),
+		formatVersion: z.literal(2),
+		title: z.string(),
+		description: z.string().nullable(),
+		published: z.boolean(),
+		facts: z.array(
+			z.object({
+				id: z.string(),
+				slots: SlotsSchema,
+				questions: z.array(QuestionSchema).optional(),
+				detail: z.string().optional(),
+				attrs: FactAttrsSchema.optional(),
+			})
+		),
+	})
+	.openapi('SetFile');
+
 export const RatingsResponseSchema = SuccessResponseSchema(
 	z.object({ ratings: z.array(RatingSchema) })
 ).openapi('RatingsResponse');

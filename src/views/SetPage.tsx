@@ -10,7 +10,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ApiError, type StudyClient } from '../api/client'
 import type { StudySetDetail } from '../api/types'
-import { serializeSetFile, setFileName } from '../setFile'
+import { setFileName } from '../setFile'
+import { agentBrief } from '../agentBrief'
 import { GAMES, findGame } from '../games/registry'
 import { Editor } from './Editor'
 
@@ -44,6 +45,7 @@ export function SetPage({
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copiedBrief, setCopiedBrief] = useState(false)
   // Deleting takes a set, its cards and every reader's saved place with it,
   // and there is no undo. Two taps, not a modal — a confirm dialog on a phone
   // is a bigger interruption than the action warrants.
@@ -103,12 +105,11 @@ export function SetPage({
    * The file is the same document the API accepts back, so an export is a fork
    * waiting to happen.
    */
-  const exportFile = useCallback(() => {
-    if (!set) return
-    const url = URL.createObjectURL(new Blob([serializeSetFile(set)], { type: 'application/json' }))
+  const download = useCallback((text: string, filename: string) => {
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
     const link = document.createElement('a')
     link.href = url
-    link.download = setFileName(set.title)
+    link.download = filename
     // In the document, not just constructed: Firefox ignores a click on an
     // anchor that was never attached, and silently downloads nothing.
     link.style.display = 'none'
@@ -119,7 +120,42 @@ export function SetPage({
     // not started reading the blob by the time click() returns, and revoking
     // synchronously gives it an empty file.
     window.setTimeout(() => URL.revokeObjectURL(url), 0)
-  }, [set])
+  }, [])
+
+  /**
+   * Fetched, not built from the set already in memory.
+   *
+   * One idea of what an export contains, living on the server, so a file saved
+   * from this button is byte-identical to one pulled with curl. A local
+   * serializer would drift from the server's the first time either changed.
+   */
+  const exportFile = useCallback(() => {
+    if (!set) return
+    client
+      .getFile(set.id)
+      .then(file => download(`${JSON.stringify(file, null, 2)}\n`, setFileName(set.title)))
+      .catch(() => setError('Could not build the file for this set.'))
+  }, [client, download, set])
+
+  /**
+   * The file plus a paragraph telling an agent what to do with it.
+   *
+   * The set alone is not enough of a brief: an agent handed raw JSON guesses at
+   * the slot vocabulary, invents its own phrasing conventions, and — worst —
+   * drops the fact ids, which silently discards every rating the set has
+   * earned. Saying so costs one paragraph.
+   */
+  const copyForAgent = useCallback(() => {
+    if (!set) return
+    client
+      .getFile(set.id)
+      .then(async file => {
+        await navigator.clipboard.writeText(agentBrief(file))
+        setCopiedBrief(true)
+        window.setTimeout(() => setCopiedBrief(false), 2000)
+      })
+      .catch(() => setError('Could not copy this set.'))
+  }, [client, set])
 
   // Asked of the registry, not hard-coded: this page does not know what a
   // board is. Each game decides from the CARDS whether it can be played, so a
@@ -281,6 +317,14 @@ export function SetPage({
           disabled={set.facts.length === 0}
         >
           Export file
+        </button>
+        <button
+          type="button"
+          className="btn btn--quiet btn--sm"
+          onClick={copyForAgent}
+          disabled={set.facts.length === 0}
+        >
+          {copiedBrief ? 'Copied for agent' : 'Copy for agent'}
         </button>
         {set.published && (
           <button type="button" className="btn btn--quiet btn--sm" onClick={copyLink}>

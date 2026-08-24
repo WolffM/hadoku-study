@@ -1,82 +1,82 @@
 /**
- * A set has to survive leaving and coming back.
+ * Reading a set from wherever it came from.
  *
- * Two properties, and both have teeth. The export has to parse as an import
- * with nothing edited — that is the whole reason a set is one file. And a v1
- * export, written before facts existed, has to land as the same content
- * migration 0003 made of the v1 rows, because plenty of those files exist on
- * disk and refusing them would strand sets that convert perfectly.
+ * WRITING a file lives on the server now, and its round-trip property is
+ * asserted there — one implementation, one place. What is left here is the
+ * genuinely different half: being tolerant on the way IN. What people have on
+ * the clipboard is a server file, a raw API response, a spreadsheet column, or
+ * a v1 export from before facts existed, and all of those have to land.
  */
 
 import { describe, expect, it } from 'vitest'
-import {
-  SET_FILE_VERSION,
-  SetFileError,
-  factsFromCards,
-  parseDelimited,
-  parseImport,
-  serializeSetFile,
-  setFileName,
-  toSetFile
-} from './setFile'
-import { authored, clue, detailSet, flashcard } from './testing/fixtures'
+import { SetFileError, factsFromCards, parseDelimited, parseImport, setFileName } from './setFile'
 
-const roundTrip = (set: Parameters<typeof toSetFile>[0]) =>
-  parseImport(JSON.stringify(toSetFile(set)))
+/**
+ * What `GET /sets/{id}/file` actually emits, copied in shape from the worker's
+ * own tests. A fixture rather than a call, because the point of this file is
+ * what happens to a document once it is on someone's clipboard.
+ */
+const serverFile = {
+  $schema: 'https://hadoku.me/study/api/openapi.json#/components/schemas/CreateSetInput',
+  formatVersion: 2,
+  title: 'The Reformation',
+  description: 'Luther to Augsburg',
+  published: true,
+  facts: [
+    {
+      id: 'worms',
+      slots: {
+        who: 'Martin Luther and Emperor Charles V',
+        what: 'Luther refused to recant his writings',
+        where: 'the Diet of Worms',
+        when: '1521'
+      },
+      questions: [{ ask: 'when', given: ['where'], prompt: 'What year?', seedTier: 2 }],
+      detail: 'A later embellishment.',
+      attrs: { board: { category: 'Places' } }
+    },
+    { id: 'plain', slots: { prompt: 'кот', answer: 'cat' } }
+  ]
+}
 
-describe('exporting', () => {
-  it('writes the format marker and the schema pointer', () => {
-    const file = toSetFile(detailSet([flashcard('a')]))
-    expect(file.formatVersion).toBe(SET_FILE_VERSION)
-    expect(String(file.$schema)).toContain('openapi.json')
-  })
+describe('reading what the server emits', () => {
+  const parsed = parseImport(JSON.stringify(serverFile))
 
-  it('never writes the derived variants', () => {
-    // They are recomputed from slots and questions on every read. A copy in
-    // the file would be an authoritative-looking second answer, wrong the
-    // moment a slot is edited.
-    const file = toSetFile(detailSet([authored('a')])) as { facts: Record<string, unknown>[] }
-    expect(file.facts[0]).not.toHaveProperty('variants')
-    expect(file.facts[0].slots).toBeDefined()
-    expect(file.facts[0].questions).toBeDefined()
-  })
-
-  it('writes each fact’s id, which is what carries its rating history', () => {
-    const file = toSetFile(detailSet([flashcard('keep-me')])) as {
-      facts: Record<string, unknown>[]
-    }
-    expect(file.facts[0].id).toBe('keep-me')
-  })
-
-  it('omits what a fact has nothing to say about', () => {
-    const file = toSetFile(detailSet([flashcard('a')])) as { facts: Record<string, unknown>[] }
-    expect(file.facts[0]).not.toHaveProperty('detail')
-    expect(file.facts[0]).not.toHaveProperty('attrs')
-  })
-
-  it('ends with a newline, so the file is a well-formed text file', () => {
-    expect(serializeSetFile(detailSet([flashcard('a')]))).toMatch(/\n$/)
-  })
-})
-
-describe('a round trip loses nothing', () => {
-  it('keeps slots, questions and ids', () => {
-    const parsed = roundTrip(detailSet([authored('a')], { title: 'The Reformation' }))
+  it('keeps the metadata', () => {
     expect(parsed.title).toBe('The Reformation')
-    expect(parsed.facts[0].id).toBe('a')
-    expect(parsed.facts[0].slots.when).toBe('1521')
-    expect(parsed.facts[0].questions?.map(q => q.ask)).toEqual(['when', 'where'])
+    expect(parsed.description).toBe('Luther to Augsburg')
+    expect(parsed.facts).toHaveLength(2)
   })
 
-  it('keeps a board category, so a board does not degrade to a deck', () => {
-    const parsed = roundTrip(detailSet([clue('a', 'Places', 4)]))
+  it('keeps every fact’s id, which is what carries its rating history', () => {
+    expect(parsed.facts.map(fact => fact.id)).toEqual(['worms', 'plain'])
+  })
+
+  it('keeps slots, questions and the game bag', () => {
+    expect(parsed.facts[0].slots.when).toBe('1521')
+    expect(parsed.facts[0].questions).toEqual([
+      { ask: 'when', given: ['where'], prompt: 'What year?', seedTier: 2 }
+    ])
     expect(parsed.facts[0].attrs?.board).toEqual({ category: 'Places' })
-    expect(parsed.facts[0].questions?.[0].seedTier).toBe(4)
+    expect(parsed.facts[0].detail).toBe('A later embellishment.')
+  })
+
+  it('leaves a fact that declares nothing declaring nothing', () => {
+    expect(parsed.facts[1].questions).toBeUndefined()
+  })
+
+  it('ignores the metadata keys rather than choking on them', () => {
+    expect(parsed).not.toHaveProperty('formatVersion')
   })
 
   it('keeps a namespace this bundle has never heard of', () => {
-    const set = detailSet([{ ...flashcard('a'), attrs: { nameThatMap: { region: 'Maguuma' } } }])
-    expect(roundTrip(set).facts[0].attrs?.nameThatMap).toEqual({ region: 'Maguuma' })
+    const exotic = {
+      ...serverFile,
+      facts: [{ id: 'x', slots: { a: '1', b: '2' }, attrs: { nameThatMap: { region: 'Maguuma' } } }]
+    }
+    expect(parseImport(JSON.stringify(exotic)).facts[0].attrs?.nameThatMap).toEqual({
+      region: 'Maguuma'
+    })
   })
 })
 
@@ -143,8 +143,8 @@ describe('reading whatever is on the clipboard', () => {
   it('unwraps a raw API response', () => {
     // `curl <url> > set.json` writes the whole envelope, and telling someone
     // their own export is the wrong shape is a pointless obstacle.
-    const body = { success: true, data: { set: toSetFile(detailSet([flashcard('a')])) } }
-    expect(parseImport(JSON.stringify(body)).facts).toHaveLength(1)
+    const body = { success: true, data: { set: serverFile } }
+    expect(parseImport(JSON.stringify(body)).facts).toHaveLength(2)
   })
 
   it('accepts a bare array of facts', () => {

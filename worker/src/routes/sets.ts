@@ -33,11 +33,12 @@ import {
 	ReplaceSetInputSchema,
 	SetDetailResponseSchema,
 	SetResponseSchema,
+	SetFileSchema,
 	SetsResponseSchema,
 	UpdateSetInputSchema,
 	type FactInput,
 } from '../schemas.js';
-import { readFact } from '../factRows.js';
+import { readFact, toSetFile } from '../factRows.js';
 import { AUTHENTICATED, OPTIONAL_AUTH } from '../security.js';
 import { deckShape, setEvent } from '../telemetry.js';
 import type { AppEnv, SetRow } from '../types.js';
@@ -424,6 +425,44 @@ app.openapi(getSetRoute, async (c) => {
 
 	const facts = await factsJson(db, id);
 	return okWrapped(c, { set: toSetDetailJson(row, facts, viewerId) });
+});
+
+// ============================================================================
+// GET /sets/:id/file — the set as one portable document
+// ============================================================================
+
+const getFileRoute = createRoute({
+	method: 'get',
+	path: '/sets/{id}/file',
+	tags: ['Sets'],
+	summary: 'The set as a single file',
+	description:
+		'The same content as `GET /sets/{id}`, as a BARE document — no success envelope, no derived fields — so it can be piped straight into a file or pasted into an agent. It is a valid `PUT /sets/{id}` body exactly as it comes, fact ids included, which is what keeps a round trip from discarding the set’s rating history. Public when the set is published; otherwise owner-only.',
+	security: OPTIONAL_AUTH,
+	request: { params: z.object({ id: z.string() }) },
+	responses: {
+		200: {
+			description: 'The file',
+			content: { 'application/json': { schema: SetFileSchema } },
+		},
+		404: {
+			description: 'No such set — or it is private and not yours',
+			content: { 'application/json': { schema: ErrorResponseSchema } },
+		},
+	},
+});
+
+app.openapi(getFileRoute, async (c) => {
+	const { id } = c.req.valid('param');
+	const db = c.env.STUDY_DB;
+
+	const row = await loadSetForRead(db, id, readerUserId(c));
+	if (!row) return notFoundWrapped(c, 'Set');
+
+	// The one route that answers unwrapped. Everything else in this worker uses
+	// the wrapped format, and that is still right — but a document a person
+	// copies should not arrive inside an envelope they have to unwrap first.
+	return c.json(toSetFile(row, (await listFacts(db, id)).map(readFact)), 200);
 });
 
 // ============================================================================

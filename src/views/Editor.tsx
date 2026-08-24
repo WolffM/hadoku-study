@@ -6,17 +6,16 @@
  * so a per-fact save protocol would buy nothing but a reorder/insert/delete
  * dance and the drift that comes with it.
  *
- * Two kinds of row, and the distinction is load-bearing rather than cosmetic.
- * A SIMPLE fact is the two-slot flashcard this UI was built for, and it edits
- * inline exactly as it always did. A RICH fact — four slots asked three ways —
- * cannot be represented by two text inputs, so it is shown read-only and
- * passed through byte for byte. Flattening one into a front and a back would
- * destroy authoring the editor simply has no controls for, and it would do it
- * silently, on save, to the sets that had the most work in them.
+ * ONE row model, two renderers. A row always holds a whole `FactInput`; what
+ * changes is how it is drawn. A two-slot flashcard gets the pair of text
+ * inputs this UI was built for, because a deck of two hundred of them would be
+ * miserable any other way. Anything richer — or anything the author expands —
+ * gets the full editor, where slots and questions are visible because that is
+ * the only way they can be edited.
  *
- * Editing rich facts properly is Phase 3. Until then the file is the editor
- * for them, which is a real answer rather than a stopgap: the export IS the
- * import, so "edit it as a file" is one download and one paste.
+ * The split is presentation, never storage. An earlier version kept two row
+ * SHAPES and passed rich facts through untouched, which was safe but meant the
+ * editor could show you a fact it could not let you change.
  */
 
 import { useCallback, useMemo, useRef, useState } from 'react'
@@ -24,7 +23,20 @@ import type { StudyClient } from '../api/client'
 import type { FactInput, StudySetDetail } from '../api/types'
 import { LEGACY_ANSWER_SLOT, LEGACY_PROMPT_SLOT, SetFileError, parseImport } from '../setFile'
 import type { PlayCard } from '../model/playCards'
-import { BOARD_NAMESPACE, TIERS, missingForBoard, pointsFor } from '../games/board'
+import { KNOWN_SLOTS } from '../model/slots'
+import {
+  blankFact,
+  cleaned,
+  factIssue,
+  isBlank as isFactBlank,
+  isSimple,
+  readCategory,
+  simpleTier,
+  withCategory,
+  withTier
+} from '../model/factEdits'
+import { TIERS, missingForBoard, pointsFor } from '../games/board'
+import { FactEditor } from './FactEditor'
 
 export interface EditorProps {
   client: StudyClient
@@ -35,142 +47,62 @@ export interface EditorProps {
 }
 
 /**
- * Whether a fact is the plain flashcard the inline inputs can hold.
+ * One editable fact.
  *
- * Exactly two slots, named the way the v1 backfill named them, asked one way.
- * Anything else — an extra slot, a second question, an unfamiliar `ask` — has
- * authoring in it that two text boxes cannot express.
+ * `fact` is the whole truth; `expanded` is only how it is drawn. A row that
+ * cannot be drawn simply — four slots, several questions — is always expanded
+ * regardless of the flag, so the flag can never hide something it cannot show.
  */
-function isSimple(fact: FactInput): boolean {
-  const names = Object.keys(fact.slots)
-  if (names.length !== 2) return false
-  if (!names.includes(LEGACY_PROMPT_SLOT) || !names.includes(LEGACY_ANSWER_SLOT)) return false
-  const questions = fact.questions
-  if (!questions || questions.length === 0) return true
-  return questions.length === 1 && questions[0].ask === LEGACY_ANSWER_SLOT
-}
-
-interface SimpleRow {
-  kind: 'simple'
+interface Row {
+  /** Stable across reorders and edits, so React never reuses one row's DOM for
+   *  another's text — which is what makes an input lose its caret mid-word. */
   key: string
-  /** Carried so a save keeps this fact's rating history. Absent on a new one. */
-  id?: string
-  /** Narrowed from the API's optional/nullable shape to what a controlled
-   *  input needs: empty string and null are the editor's "not set". */
-  front: string
-  back: string
-  detail: string
-  category: string
-  /** The single question's `seedTier`. A tier seeds a RATING, so it lives on
-   *  the question rather than in the board's namespace. */
-  tier: number | null
-  /** Other games' namespaces, passed through untouched. The editor does not
-   *  know what they are and must not drop them. */
-  otherAttrs: Record<string, unknown>
-}
-
-interface RichRow {
-  kind: 'rich'
-  key: string
-  /** Verbatim. Nothing in this file may reshape it. */
   fact: FactInput
+  expanded: boolean
 }
-
-type Row = SimpleRow | RichRow
 
 let rowSeq = 0
 
-const readBoardCategory = (fact: FactInput): string => {
-  const raw = fact.attrs?.[BOARD_NAMESPACE]
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return ''
-  const { category } = raw as Record<string, unknown>
-  return typeof category === 'string' ? category : ''
-}
-
-function toRow(fact: FactInput): Row {
-  const key = `row-${rowSeq++}`
-  if (!isSimple(fact)) return { kind: 'rich', key, fact }
-  return {
-    kind: 'simple',
-    key,
-    id: fact.id,
-    front: fact.slots[LEGACY_PROMPT_SLOT] ?? '',
-    back: fact.slots[LEGACY_ANSWER_SLOT] ?? '',
-    detail: fact.detail ?? '',
-    category: readBoardCategory(fact),
-    tier: fact.questions?.[0]?.seedTier ?? null,
-    otherAttrs: Object.fromEntries(
-      Object.entries(fact.attrs ?? {}).filter(([name]) => name !== BOARD_NAMESPACE)
-    )
-  }
-}
-
-const blankRow = (): SimpleRow => ({
-  kind: 'simple',
+const toRow = (fact: FactInput): Row => ({
   key: `row-${rowSeq++}`,
-  front: '',
-  back: '',
-  detail: '',
-  category: '',
-  tier: null,
-  otherAttrs: {}
+  fact,
+  expanded: false
 })
 
-/** A simple row, back in the shape the API takes. */
-function toFact(row: SimpleRow): FactInput {
-  const fact: FactInput = {
-    slots: { [LEGACY_PROMPT_SLOT]: row.front.trim(), [LEGACY_ANSWER_SLOT]: row.back.trim() },
-    // ALWAYS declared, never left to the default expansion — which would also
-    // generate the reverse question and quietly double the set.
-    questions: [
-      {
-        ask: LEGACY_ANSWER_SLOT,
-        given: [LEGACY_PROMPT_SLOT],
-        ...(row.tier === null ? {} : { seedTier: row.tier })
-      }
-    ]
-  }
-  // Sent back so the server keeps the row, and with it every rating and
-  // attempt hanging off this fact.
-  if (row.id !== undefined) fact.id = row.id
-
-  const detail = row.detail.trim()
-  if (detail !== '') fact.detail = detail
-
-  // Only send what was actually set. An empty string is the editor's "not
-  // set", and posting it would store a blank category that then renders as a
-  // nameless board column.
-  const category = row.category.trim()
-  const attrs: Record<string, unknown> = { ...row.otherAttrs }
-  if (category !== '') attrs[BOARD_NAMESPACE] = { category }
-  if (Object.keys(attrs).length > 0) fact.attrs = attrs
-
-  return fact
-}
+const blankRow = (): Row => toRow(blankFact())
 
 /** Enough of a question for `missingForBoard` to judge it, without a save. */
-const previewCard = (row: SimpleRow): PlayCard => ({
+const previewCard = (row: Row): PlayCard => ({
   id: row.key,
   factId: row.key,
   variantKey: 'preview',
-  front: row.front,
-  back: row.back,
+  front: '',
+  back: '',
   detail: null,
   given: [],
   open: false,
-  seedTier: row.tier ?? 0,
-  attrs: row.category.trim() === '' ? {} : { [BOARD_NAMESPACE]: { category: row.category.trim() } }
+  seedTier: simpleTier(row.fact) ?? 3,
+  attrs: row.fact.attrs ?? null
 })
 
-const isBlank = (row: Row): boolean =>
-  row.kind === 'simple' && row.front.trim() === '' && row.back.trim() === ''
+/** Dropped silently on import and on save — everything else with content in
+ *  it is kept and reported on. */
+const isBlank = (row: Row): boolean => isFactBlank(row.fact)
 
 export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
   const [title, setTitle] = useState(existing?.title ?? '')
   const [description, setDescription] = useState(existing?.description ?? '')
   const [rows, setRows] = useState<Row[]>(() =>
     existing && existing.facts.length > 0
-      ? existing.facts.map(toRow)
+      ? existing.facts.map(fact =>
+          toRow({
+            id: fact.id,
+            slots: fact.slots,
+            questions: fact.questions ?? undefined,
+            detail: fact.detail ?? null,
+            attrs: fact.attrs ?? null
+          })
+        )
       : [blankRow(), blankRow(), blankRow()]
   )
   const [bulk, setBulk] = useState('')
@@ -181,39 +113,19 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
   // default when the set already has board data, so editing a board does not
   // hide the thing that makes it a board.
   const [showBoard, setShowBoard] = useState(
-    () => existing?.facts.some(fact => readBoardCategory(fact) !== '') ?? false
+    () => existing?.facts.some(fact => readCategory(fact) !== '') ?? false
   )
   const fileInput = useRef<HTMLInputElement>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const simpleRows = useMemo(
-    () => rows.filter((row): row is SimpleRow => row.kind === 'simple'),
-    [rows]
-  )
-  const richCount = rows.length - simpleRows.length
+  const patchFact = useCallback((key: string, fact: FactInput) => {
+    setRows(current => current.map(row => (row.key === key ? { ...row, fact } : row)))
+  }, [])
 
-  // What still stands between this set and a playable board. Null when nothing
-  // does — tagging a set should show progress, not a silent threshold.
-  const boardProgress = useMemo(
-    () => missingForBoard(simpleRows.filter(row => row.front.trim() !== '').map(previewCard)),
-    [simpleRows]
-  )
-
-  const patchRow = useCallback(
-    (key: string, field: 'front' | 'back' | 'category' | 'detail', value: string) => {
-      setRows(current =>
-        current.map(row =>
-          row.key === key && row.kind === 'simple' ? { ...row, [field]: value } : row
-        )
-      )
-    },
-    []
-  )
-
-  const patchTier = useCallback((key: string, tier: number | null) => {
+  const toggleExpanded = useCallback((key: string) => {
     setRows(current =>
-      current.map(row => (row.key === key && row.kind === 'simple' ? { ...row, tier } : row))
+      current.map(row => (row.key === key ? { ...row, expanded: !row.expanded } : row))
     )
   }, [])
 
@@ -223,6 +135,18 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
       return next.length === 0 ? [blankRow()] : next
     })
   }, [])
+
+  // What still stands between this set and a playable board. Null when nothing
+  // does — tagging a set should show progress, not a silent threshold.
+  const boardProgress = useMemo(
+    () => missingForBoard(rows.filter(row => !isBlank(row)).map(previewCard)),
+    [rows]
+  )
+
+  const categories = useMemo(
+    () => [...new Set(rows.map(row => readCategory(row.fact)).filter(c => c !== ''))],
+    [rows]
+  )
 
   /**
    * Take content from anywhere — a set file, a raw API response, a spreadsheet
@@ -259,7 +183,7 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
     }
 
     // An imported board must not look like it lost its metadata.
-    if (parsed.facts.some(fact => readBoardCategory(fact) !== '')) setShowBoard(true)
+    if (parsed.facts.some(fact => readCategory(fact) !== '')) setShowBoard(true)
 
     setError(null)
     setImported(
@@ -297,18 +221,15 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
 
     // A half-filled row is a mistake, not a fact. Dropping them silently would
     // lose work, so say what happened instead.
-    const filled = rows.filter(row => !isBlank(row))
-    const incomplete = filled.filter(
-      row => row.kind === 'simple' && (row.front.trim() === '' || row.back.trim() === '')
-    )
-    if (incomplete.length > 0) {
+    const kept = rows.filter(row => !isBlank(row)).map(row => cleaned(row.fact))
+    const broken = kept.filter(fact => factIssue(fact) !== null)
+    if (broken.length > 0) {
       setError(
-        `${incomplete.length} ${incomplete.length === 1 ? 'fact is' : 'facts are'} missing a side.`
+        `${broken.length} ${broken.length === 1 ? 'fact' : 'facts'} ${factIssue(broken[0])}.`
       )
       return
     }
 
-    const facts: FactInput[] = filled.map(row => (row.kind === 'simple' ? toFact(row) : row.fact))
     const cleanDescription = description.trim() === '' ? null : description.trim()
 
     setSaving(true)
@@ -321,9 +242,9 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
       ? client.replaceSet(existing.id, {
           title: cleanTitle,
           description: cleanDescription,
-          facts
+          facts: kept
         })
-      : client.createSet({ title: cleanTitle, description: cleanDescription, facts })
+      : client.createSet({ title: cleanTitle, description: cleanDescription, facts: kept })
 
     work.then(onSaved).catch((err: unknown) => {
       setError(err instanceof Error ? err.message : 'Could not save the set')
@@ -359,7 +280,7 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
 
       <div className="editor__cards-head">
         <h2 className="editor__heading">
-          Facts <span className="muted">({filledCount(rows)})</span>
+          Facts <span className="muted">({rows.filter(row => !isBlank(row)).length})</span>
         </h2>
         <div className="editor__import-actions">
           <button
@@ -426,119 +347,138 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
 
       {imported !== null && <p className="muted editor__imported">{imported}</p>}
 
-      {richCount > 0 && (
-        <p className="muted editor__imported">
-          {richCount} {richCount === 1 ? 'fact has' : 'facts have'} more than a front and a back, so
-          {richCount === 1 ? ' it is' : ' they are'} shown here read-only and saved untouched.
-          Export the set to edit {richCount === 1 ? 'it' : 'them'}.
-        </p>
-      )}
+      {/* Suggests names already in use, so a set does not end up with "Places"
+          and "places" as two columns, or `when` and `year` as two slots. */}
+      <datalist id="editor-categories">
+        {categories.map(category => (
+          <option key={category} value={category} />
+        ))}
+      </datalist>
+      <datalist id="editor-slot-names">
+        {KNOWN_SLOTS.map(name => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
 
-      {showBoard && (
-        <>
-          {/* Suggests categories already in use, so a board does not end up with
-              "Places" and "places" as two columns. */}
-          <datalist id="editor-categories">
-            {[...new Set(simpleRows.map(row => row.category.trim()).filter(c => c !== ''))].map(
-              category => (
-                <option key={category} value={category} />
-              )
-            )}
-          </datalist>
-          {boardProgress !== null && <p className="muted editor__imported">{boardProgress}</p>}
-        </>
+      {showBoard && boardProgress !== null && (
+        <p className="muted editor__imported">{boardProgress}</p>
       )}
 
       <ul className="editor__rows">
-        {rows.map((row, index) => (
-          <li
-            key={row.key}
-            className={`editor__row${row.kind === 'rich' ? ' editor__row--rich' : ''}`}
-          >
-            <span className="editor__row-num" aria-hidden="true">
-              {index + 1}
-            </span>
+        {rows.map((row, index) => {
+          // A fact two inputs cannot hold is always expanded, whatever the flag
+          // says — the flag can never hide something it cannot show.
+          const expanded = row.expanded || !isSimple(row.fact)
+          return (
+            <li key={row.key} className={`editor__row${expanded ? ' editor__row--rich' : ''}`}>
+              <span className="editor__row-num" aria-hidden="true">
+                {index + 1}
+              </span>
 
-            {row.kind === 'rich' ? (
-              <div className="editor__rich">
-                <p className="editor__rich-slots">
-                  {Object.entries(row.fact.slots).map(([slot, value]) => (
-                    <span key={slot} className="editor__rich-slot">
-                      <b>{slot}</b> {value}
-                    </span>
-                  ))}
-                </p>
-                <p className="muted editor__rich-note">
-                  {row.fact.questions?.length ?? Object.keys(row.fact.slots).length} questions ·
-                  read-only here
-                </p>
-              </div>
-            ) : (
-              <>
-                <input
-                  className="field__input"
-                  value={row.front}
-                  onChange={e => patchRow(row.key, 'front', e.target.value)}
-                  placeholder="Front"
-                  aria-label={`Fact ${index + 1} front`}
-                />
-                <input
-                  className="field__input"
-                  value={row.back}
-                  onChange={e => patchRow(row.key, 'back', e.target.value)}
-                  placeholder="Back"
-                  aria-label={`Fact ${index + 1} back`}
-                />
-              </>
-            )}
+              {expanded ? (
+                <div className="editor__rich">
+                  <FactEditor
+                    fact={row.fact}
+                    index={index}
+                    onChange={fact => patchFact(row.key, fact)}
+                  />
+                </div>
+              ) : (
+                <>
+                  <input
+                    className="field__input"
+                    value={row.fact.slots[LEGACY_PROMPT_SLOT] ?? ''}
+                    onChange={e =>
+                      patchFact(row.key, {
+                        ...row.fact,
+                        slots: { ...row.fact.slots, [LEGACY_PROMPT_SLOT]: e.target.value }
+                      })
+                    }
+                    placeholder="Front"
+                    aria-label={`Fact ${index + 1} front`}
+                  />
+                  <input
+                    className="field__input"
+                    value={row.fact.slots[LEGACY_ANSWER_SLOT] ?? ''}
+                    onChange={e =>
+                      patchFact(row.key, {
+                        ...row.fact,
+                        slots: { ...row.fact.slots, [LEGACY_ANSWER_SLOT]: e.target.value }
+                      })
+                    }
+                    placeholder="Back"
+                    aria-label={`Fact ${index + 1} back`}
+                  />
+                </>
+              )}
 
-            <button
-              type="button"
-              className="btn btn--ghost btn--icon"
-              onClick={() => removeRow(row.key)}
-              aria-label={`Remove fact ${index + 1}`}
-            >
-              ×
-            </button>
-
-            {showBoard && row.kind === 'simple' && (
-              <div className="editor__board-fields">
-                <input
-                  className="field__input"
-                  list="editor-categories"
-                  value={row.category}
-                  onChange={e => patchRow(row.key, 'category', e.target.value)}
-                  placeholder="Category"
-                  maxLength={40}
-                  aria-label={`Fact ${index + 1} board category`}
-                />
-                <select
-                  className="field__input"
-                  value={row.tier ?? ''}
-                  onChange={e =>
-                    patchTier(row.key, e.target.value === '' ? null : Number(e.target.value))
-                  }
-                  aria-label={`Fact ${index + 1} starting tier`}
+              <div className="editor__row-tools">
+                {isSimple(row.fact) && (
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--icon"
+                    onClick={() => toggleExpanded(row.key)}
+                    aria-expanded={expanded}
+                    aria-label={`${expanded ? 'Collapse' : 'Expand'} fact ${index + 1}`}
+                    title={expanded ? 'Collapse' : 'Add slots and questions'}
+                  >
+                    {expanded ? '⌃' : '⌄'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--icon"
+                  onClick={() => removeRow(row.key)}
+                  aria-label={`Remove fact ${index + 1}`}
                 >
-                  <option value="">No tier</option>
-                  {TIERS.map(tier => (
-                    <option key={tier} value={tier}>
-                      {pointsFor(tier)}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  className="field__input"
-                  value={row.detail}
-                  onChange={e => patchRow(row.key, 'detail', e.target.value)}
-                  placeholder="Detail shown after the answer (optional)"
-                  maxLength={2000}
-                  aria-label={`Fact ${index + 1} detail`}
-                />
+                  ×
+                </button>
               </div>
-            )}
-          </li>
-        ))}
+
+              {showBoard && !expanded && (
+                <div className="editor__board-fields">
+                  <input
+                    className="field__input"
+                    list="editor-categories"
+                    value={readCategory(row.fact)}
+                    onChange={e => patchFact(row.key, withCategory(row.fact, e.target.value))}
+                    placeholder="Category"
+                    maxLength={40}
+                    aria-label={`Fact ${index + 1} board category`}
+                  />
+                  <select
+                    className="field__input"
+                    value={simpleTier(row.fact) ?? ''}
+                    onChange={e =>
+                      patchFact(
+                        row.key,
+                        withTier(row.fact, e.target.value === '' ? null : Number(e.target.value))
+                      )
+                    }
+                    aria-label={`Fact ${index + 1} starting tier`}
+                  >
+                    <option value="">No tier</option>
+                    {TIERS.map(tier => (
+                      <option key={tier} value={tier}>
+                        {pointsFor(tier)}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    className="field__input"
+                    value={row.fact.detail ?? ''}
+                    onChange={e =>
+                      patchFact(row.key, { ...row.fact, detail: e.target.value || null })
+                    }
+                    placeholder="Detail shown after the answer (optional)"
+                    maxLength={2000}
+                    aria-label={`Fact ${index + 1} detail`}
+                  />
+                </div>
+              )}
+            </li>
+          )
+        })}
       </ul>
 
       <button
@@ -571,5 +511,3 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
     </section>
   )
 }
-
-const filledCount = (rows: Row[]): number => rows.filter(row => !isBlank(row)).length

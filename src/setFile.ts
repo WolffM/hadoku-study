@@ -1,39 +1,21 @@
 /**
  * A set as a single file.
  *
- * The format is not invented here — it is exactly what `GET /study/api/sets/:id`
- * returns, minus the fields the server derives. The API strips unknown keys
- * rather than rejecting them, so the same document a person downloads is a
- * valid create or replace body with nothing edited out. Keeping ONE shape is
- * the whole point: an agent, the editor and curl all move sets the same way.
+ * READING only. Writing a file lives on the server, at `GET /sets/{id}/file`,
+ * and the Export button fetches it — so there is exactly one idea of what an
+ * export contains rather than a client copy that can drift from the scripted
+ * one.
  *
- * Reading is deliberately more forgiving than writing. What people actually
+ * Reading is genuinely different work and belongs here. What people actually
  * have on the clipboard is a raw API response, a spreadsheet column, a v1
  * export from before facts existed, or a file someone else wrote — so all of
- * those land, and only the shape we emit is canonical.
+ * those land. Being tolerant on the way in and canonical on the way out is the
+ * whole shape of this: one output, many inputs.
  */
 
-import type { FactInput, QuestionInput, StudyFact, StudySetDetail } from './api/types'
+import type { FactInput, QuestionInput } from './api/types'
 
-export interface StudySetFile {
-  title: string
-  description?: string | null
-  /** Omitted on a PUT means "leave visibility alone" — see the worker's
-   *  ReplaceSetInput. Always written on export so a round trip loses nothing. */
-  published?: boolean
-  facts: FactInput[]
-}
-
-/**
- * The current format's version marker.
- *
- * 2 is facts. 1 was cards, and files in that shape still import — see
- * {@link factsFromCards} — because plenty of them exist on people's disks and
- * refusing them would strand sets that are perfectly convertible.
- */
-export const SET_FILE_VERSION = 2
-
-/** What a v1 card's two sides became. Named, because three places construct
+/** What a v1 card's two sides became. Named, because several places construct
  *  the pair and a typo in one of them is a silently broken import. */
 export const LEGACY_PROMPT_SLOT = 'prompt'
 export const LEGACY_ANSWER_SLOT = 'answer'
@@ -41,52 +23,6 @@ export const LEGACY_ANSWER_SLOT = 'answer'
 /** The seed tier a question gets when nothing says otherwise. Matches the
  *  worker's DEFAULT_SEED_TIER; the server clamps anyway. */
 const DEFAULT_SEED_TIER = 3
-
-/**
- * Serialize a set for download.
- *
- * `$schema` and `formatVersion` are metadata a reader can ignore: the API
- * strips both on import, so they cost nothing and give whoever opens the file
- * in an editor somewhere to look.
- *
- * `variants` is deliberately NOT written. It is derived from `slots` and
- * `questions` on every read, and a copy in the file would be a stale second
- * answer to what this fact asks — authoritative-looking, and wrong the moment
- * a slot is edited.
- */
-export function toSetFile(set: StudySetDetail): Record<string, unknown> {
-  return {
-    $schema: 'https://hadoku.me/study/api/openapi.json#/components/schemas/CreateSetInput',
-    formatVersion: SET_FILE_VERSION,
-    title: set.title,
-    description: set.description,
-    published: set.published,
-    facts: set.facts.map(toFactFile)
-  }
-}
-
-/**
- * One fact, written only where it has something to say.
- *
- * `id` is written FIRST and always. Ratings and attempt history hang off it,
- * and a save replaces a set's facts wholesale — so a file that drops the ids
- * silently discards everything the set has learned. It is the one server-owned
- * field the API reads back rather than strips.
- */
-function toFactFile(fact: StudyFact): Record<string, unknown> {
-  const out: Record<string, unknown> = { id: fact.id, slots: fact.slots }
-  if (fact.questions && fact.questions.length > 0) out.questions = fact.questions
-  if (fact.detail) out.detail = fact.detail
-  // Whole and unopened: this module has no business knowing which games exist,
-  // and copying the bag verbatim is what lets a set authored by a newer client
-  // survive a round trip through an older one.
-  if (fact.attrs && Object.keys(fact.attrs).length > 0) out.attrs = fact.attrs
-  return out
-}
-
-export function serializeSetFile(set: StudySetDetail): string {
-  return `${JSON.stringify(toSetFile(set), null, 2)}\n`
-}
 
 /**
  * A filename that survives a Downloads folder.

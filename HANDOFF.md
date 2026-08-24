@@ -298,6 +298,58 @@ it is access control on the row rather than content. A hand-written file that
 never mentions publication must not be able to silently unshare a set. Export
 always writes it, so a true round trip is still lossless.
 
+## Authoring: one output, many inputs
+
+**Writing a file lives on the server.** `GET /sets/{id}/file` is the only
+implementation, and the editor's Export button fetches it rather than
+serializing the set it already holds in memory. A client copy would eventually
+disagree with the server's, and the symptom would be a UI export that behaves
+differently from a scripted one for reasons nobody could see.
+
+It is the one route in this worker that answers **unwrapped**. Everything else
+uses `{success, data}`, and that is still right — but a document a person
+copies should not arrive inside an envelope they have to unwrap first.
+
+**Reading stays on the client**, because it is genuinely different work.
+`parseImport` takes a server file, a raw API response, a bare array, a
+spreadsheet paste, or a v1 export from before facts existed. Tolerant in,
+canonical out.
+
+### Copy for agent
+
+The JSON alone is not a brief. `src/agentBrief.ts` is the paragraph that goes
+with it, and every line of it exists because leaving it out produces a specific
+kind of bad output: an agent that guesses at the slot vocabulary, invents its
+own phrasing conventions, or — the expensive one — **drops the fact ids**,
+which silently discards every rating the set has earned.
+
+### The editor holds one row model and draws it two ways
+
+A row always holds a whole `FactInput`. A two-slot flashcard gets the pair of
+text inputs, because a deck of two hundred of them would be miserable any other
+way; anything richer, or anything the author expands, gets `FactEditor` with
+slots and questions visible. **The split is presentation, never storage** — an
+earlier version kept two row SHAPES and passed rich facts through untouched,
+which was safe but meant the editor could show you a fact it could not let you
+change. A fact two inputs cannot hold is always expanded regardless of the
+toggle, so the toggle can never hide something it cannot show.
+
+Two edits in `model/factEdits.ts` are quietly destructive if they get it wrong,
+and both are tested for it:
+
+- **Renaming a slot** has to carry through every declaration that names it, or
+  the question stops resolving and disappears from the set — no error, one
+  fewer question.
+- **Removing a slot** has to take the questions that asked it, or the set
+  carries declarations that render nothing.
+
+`model/slots.ts` mirrors the worker's `KNOWN_SLOTS`, and that duplication is
+deliberate where the variant-key duplication was not. Drift here is cheap and
+visible: a placeholder says "optional" for a slot the server cannot phrase, and
+the author writes a prompt they did not strictly need. Nothing is stored wrong.
+Compare `variantKey`, which is server-only precisely because a disagreement
+there splits a question's history in two with no symptom at all.
+
 ## Games, and the room left for more of them
 
 A set is played by a **game**. The drill and the board are both games, and

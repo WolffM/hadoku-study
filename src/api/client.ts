@@ -205,6 +205,33 @@ export function createClient(base: string) {
      * board renders has to be settled BEFORE the grid is drawn, or the tiles
      * reshuffle under a thumb already moving toward one.
      */
+    /**
+     * The set as one portable document.
+     *
+     * Fetched rather than built from the set already in memory, so there is
+     * exactly ONE idea of what an export contains. A second implementation
+     * here would eventually disagree with the server's, and the symptom would
+     * be a UI export that behaves differently from a scripted one for reasons
+     * nobody could see.
+     *
+     * Bare, not wrapped — so `request` cannot be used, and this reads the body
+     * directly.
+     */
+    getFile: async (id: string): Promise<unknown> => {
+      const path = `/sets/${encodeURIComponent(id)}/file`
+      logger.apiRequest('GET', path)
+      const res = await fetch(`${trimmed}${path}`, {
+        credentials: 'same-origin',
+        headers: headers()
+      })
+      if (!res.ok) {
+        logger.warn('Study API refused the set file', { path, status: res.status })
+        throw new ApiError(res.status, `${res.status} ${res.statusText}`)
+      }
+      logger.apiResponse('GET', path, res.status)
+      return (await res.json()) as unknown
+    },
+
     getRatings: (id: string) =>
       request<{ ratings: QuestionRating[] }>(
         trimmed,

@@ -744,27 +744,109 @@
   min-width: 0;
 }
 
-.editor__rich-slots {
+.editor__row-tools {
+  grid-area: remove;
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--hdk-space-xs) var(--hdk-space-md);
-  margin: 0;
-  font-size: var(--hdk-text-sm);
-  color: var(--color-text-secondary);
-  overflow-wrap: anywhere;
+  gap: var(--hdk-space-xs);
+  align-items: start;
 }
 
-.editor__rich-slot b {
+/* ---------- the expanded fact ---------- */
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-md);
+}
+
+.fact__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-xs);
+}
+
+.fact__legend {
+  margin: 0;
   font-size: var(--hdk-text-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-text-tertiary);
-  margin-right: var(--hdk-space-xs);
 }
 
-.editor__rich-note {
+.fact__note {
   margin: 0;
+  font-size: var(--hdk-text-sm);
+}
+
+/* A slot is a name and a value. The name is narrow because it is an
+   identifier — `when`, `where` — and the value is prose. */
+.fact__slot {
+  display: grid;
+  grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr) auto;
+  gap: var(--hdk-space-xs);
+  align-items: center;
+}
+
+.fact__slot-name {
+  font-family: var(--font-family);
+  font-size: var(--hdk-text-sm);
+}
+
+.fact__question {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-xs);
+  padding: var(--hdk-space-sm);
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--hdk-radius-sm);
+}
+
+.fact__question-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hdk-space-sm);
+  align-items: end;
+}
+
+.fact__inline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fact__inline-label {
   font-size: var(--hdk-text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.fact__question-head .btn--icon {
+  margin-left: auto;
+}
+
+.fact__shows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hdk-space-xs) var(--hdk-space-md);
+  align-items: center;
+}
+
+.fact__show {
+  display: flex;
+  align-items: center;
+  gap: var(--hdk-space-xs);
+  font-size: var(--hdk-text-sm);
+  color: var(--color-text-secondary);
+}
+
+.fact__show input {
+  accent-color: var(--color-primary);
+  /* 16px is the smallest a checkbox can be and still be hit reliably with a
+     thumb, which is the whole reason this is not left at the browser default
+     on a phone. */
+  inline-size: 1rem;
+  block-size: 1rem;
 }
 
 .editor__actions {
