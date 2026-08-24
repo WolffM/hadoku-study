@@ -13,6 +13,7 @@ import type {
   AttemptInput,
   FactInput,
   QuestionRating,
+  QuestionRatingChange,
   StoredProgress,
   StudySet,
   StudySetDetail
@@ -246,11 +247,15 @@ export function createClient(base: string) {
      * would be cancelled when the page freezes.
      */
     recordAttempts: (id: string, game: string, attempts: AttemptInput[]) =>
-      request<{ ratings: QuestionRating[] }>(trimmed, `/sets/${encodeURIComponent(id)}/attempts`, {
-        method: 'POST',
-        body: JSON.stringify({ game, attempts }),
-        keepalive: true
-      }).then(d => d.ratings),
+      request<{ ratings: QuestionRatingChange[] }>(
+        trimmed,
+        `/sets/${encodeURIComponent(id)}/attempts`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ game, attempts }),
+          keepalive: true
+        }
+      ).then(d => d.ratings),
 
     getProgress: (id: string) =>
       request<{ progress: StoredProgress | null }>(

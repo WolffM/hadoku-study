@@ -744,6 +744,123 @@
   min-width: 0;
 }
 
+/* ---------- the end of a sitting ---------- */
+
+/* The only place a reader is ever shown a rating. Everywhere else it is
+   invisible machinery deciding what you get asked; surfacing it on a tile
+   would turn a quiz into a dashboard. */
+.recap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--hdk-space-md);
+  text-align: center;
+  padding: var(--hdk-space-lg) var(--hdk-space-md);
+}
+
+.recap__title {
+  margin: 0;
+  font-size: var(--hdk-text-lg);
+  font-weight: 600;
+}
+
+.recap__line {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.recap__review {
+  width: 100%;
+  max-width: 32rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-xs);
+  padding-top: var(--hdk-space-md);
+  border-top: 1px solid var(--color-border-light);
+}
+
+.recap__review-head,
+.standing__sub {
+  margin: 0;
+  font-size: var(--hdk-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.recap__list,
+.standing__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-xs);
+}
+
+/* Left-aligned inside a centred block: a list of sentences reads badly ragged
+   on both sides, and these are sentences. */
+.recap__item,
+.standing__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: var(--hdk-space-sm);
+  background-color: var(--color-bg-alt);
+  border-radius: var(--hdk-radius-sm);
+}
+
+.recap__item-front,
+.standing__item-front {
+  font-size: var(--hdk-text-sm);
+  line-height: 1.4;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.recap__item-answer,
+.standing__item-answer {
+  font-size: var(--hdk-text-xs);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.recap__item-move {
+  font-size: var(--hdk-text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.recap__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hdk-space-sm);
+  justify-content: center;
+  padding-top: var(--hdk-space-sm);
+}
+
+/* ---------- how a set is going ---------- */
+
+.standing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-xs);
+  padding: var(--hdk-space-md);
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hdk-radius);
+}
+
+.standing__head {
+  margin: 0 0 var(--hdk-space-xs);
+  font-size: var(--hdk-text-sm);
+  color: var(--color-text-secondary);
+}
+
+.standing__sub {
+  margin-top: var(--hdk-space-sm);
+}
+
 .editor__row-tools {
   grid-area: remove;
   display: flex;

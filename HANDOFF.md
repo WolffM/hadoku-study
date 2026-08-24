@@ -295,6 +295,56 @@ them move global ratings would be letting an unbounded, unattributable
 population vote. Their board still ranks — by `seedTier`, which is exactly how
 it ranked before ratings existed.
 
+## Where a reader actually sees a rating
+
+**Once, at the end of a sitting**, and once on the set page. Everywhere else a
+rating is invisible machinery deciding what you get asked — putting a number on
+a board tile would turn a quiz into a dashboard.
+
+`POST /attempts` returns a `RatingChange` (a `Rating` plus `globalDelta` and
+`localDelta`) where `GET /ratings` returns a plain `Rating`. Two schemas rather
+than one with an always-zero delta on reads, which would be a field every
+caller has to know not to trust. The deltas are ACCUMULATED across a request,
+because a flushed outbox can name the same question twice and a recap showing
+only the last move would understate it.
+
+### The recap keeps the FIRST outcome and the LATEST rating
+
+`state/session.ts` is pure, and both rules in it exist because the obvious
+version is wrong:
+
+- The drill **re-queues a missed question until you get it**, so the last
+  outcome of every question in a completed pass is "got". A recap built from
+  the last outcome would report a clean sweep of every pass you fought through.
+- A question missed twice and then got has **moved three times**; the honest
+  report is where it ended up and how far it travelled, so the delta
+  accumulates and the rating is the latest.
+
+A movement is recorded even when nothing reached the server — signed out, or
+offline. The recap's job is to say what you got wrong, which is true either
+way; it just stays quiet about ratings that did not move.
+
+### The standing panel answers two questions from one dataset
+
+**Hardest for you** is your highest local ratings among questions you have
+actually answered. That is what a local rating IS, distilled — re-deriving it
+from the attempt ledger would be computing an answer the rating already holds.
+
+**Not where you put them** is for the owner: questions whose GLOBAL rating has
+drifted more than `DRIFT_THRESHOLD` from the tier the author chose. The one
+number an author can act on — not the rating, which means nothing alone, but
+the disagreement. The threshold exists because ratings wander by a few points
+constantly, and reporting that as news trains people to ignore the panel.
+
+It renders nothing until something has been played. An empty panel promising
+insight later is worse than no panel.
+
+**The editor deliberately shows no ratings.** It was planned and dropped: the
+editor holds question DECLARATIONS, and mapping one to its rating means
+deriving a variant key, which is server-only by design. The standing panel
+reads resolved variants instead, which already carry both the key and the seed
+tier — so the same information arrives without a second key implementation.
+
 ## A set is one file, and that is load-bearing
 
 Sets move between the app, a script and an agent as a single JSON document, and

@@ -354,6 +354,19 @@ export const RatingSchema = z
 	.openapi('Rating');
 
 /**
+ * The same, plus what this request did to it.
+ *
+ * Only `POST /attempts` answers with these — a plain read has no movement to
+ * report, and an always-present `delta` that is always zero on a GET would be
+ * a field a caller has to know not to trust. The clamp is already applied, so
+ * a recap showing `+18` where the ceiling allowed `+1` is impossible.
+ */
+export const RatingChangeSchema = RatingSchema.extend({
+	globalDelta: z.number().int().openapi({ example: -14 }),
+	localDelta: z.number().int().openapi({ example: -26 }),
+}).openapi('RatingChange');
+
+/**
  * One answer, as reported by whoever was playing.
  *
  * Self-graded, and that is the whole grading story — open-ended and discrete
@@ -444,5 +457,9 @@ export const SetFileSchema = z
 export const RatingsResponseSchema = SuccessResponseSchema(
 	z.object({ ratings: z.array(RatingSchema) })
 ).openapi('RatingsResponse');
+
+export const RatingChangesResponseSchema = SuccessResponseSchema(
+	z.object({ ratings: z.array(RatingChangeSchema) })
+).openapi('RatingChangesResponse');
 
 export type FactInput = z.infer<typeof factInput>;

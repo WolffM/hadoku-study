@@ -22,6 +22,8 @@ import type { GameProps } from '../types'
 import type { QuestionRating } from '../../api/types'
 import { toPlayCards } from '../../model/playCards'
 import { indexRatings, recordAttempt } from '../../state/attempts'
+import { noteAnswer, type Movement } from '../../state/session'
+import { SessionRecap } from '../../components/SessionRecap'
 import { buildBoard, bySeedTier, pointsFor, type BoardClue, type RankBy } from './model'
 
 /** How a cell was resolved. Absent means unplayed. */
@@ -83,6 +85,10 @@ export function Board({ set, client, syncEnabled, onExit }: GameProps) {
     return index
   }, [board])
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({})
+  // What this sitting answered, for the recap. A board is played once through,
+  // so the log and the outcomes map never disagree — but the log carries what
+  // the ratings did, which the outcomes map has no room for.
+  const [log, setLog] = useState<Movement[]>([])
   const [open, setOpen] = useState<BoardClue | null>(null)
   const [revealed, setRevealed] = useState(false)
 
@@ -128,12 +134,14 @@ export function Board({ set, client, syncEnabled, onExit }: GameProps) {
     (outcome: Outcome) => {
       if (!open) return
       setOutcomes(current => ({ ...current, [open.card.id]: outcome }))
-      // Fire and forget: `recordAttempt` never throws and queues on failure,
-      // so a bookkeeping problem can never interrupt a game in progress.
+      const answered = open.card
+      // Never throws and queues on failure, so a bookkeeping problem can never
+      // interrupt a game in progress. The recap is built from whatever comes
+      // back — including nothing, which is the signed-out and offline case.
       void recordAttempt(
         { client, setId: set.id, game: 'board', enabled: syncEnabled },
-        { factId: open.card.factId, variantKey: open.card.variantKey, result: outcome }
-      )
+        { factId: answered.factId, variantKey: answered.variantKey, result: outcome }
+      ).then(changes => setLog(current => noteAnswer(current, answered, outcome, changes)))
       closeClue()
     },
     [client, closeClue, open, set.id, syncEnabled]
@@ -159,6 +167,7 @@ export function Board({ set, client, syncEnabled, onExit }: GameProps) {
 
   const restart = useCallback(() => {
     setOutcomes({})
+    setLog([])
     closeClue()
   }, [closeClue])
 
@@ -245,12 +254,22 @@ export function Board({ set, client, syncEnabled, onExit }: GameProps) {
 
         {finished && (
           <div className="board__done panel">
-            <p>
-              Board cleared — <strong>{score}</strong> of {board.maxScore}.
-            </p>
-            <button type="button" className="btn btn--primary btn--sm" onClick={restart}>
-              Play again
-            </button>
+            <SessionRecap
+              headline="Board cleared"
+              detail={
+                <>
+                  <strong>{score}</strong> of {board.maxScore}
+                </>
+              }
+              log={log}
+            >
+              <button type="button" className="btn btn--primary btn--sm" onClick={restart}>
+                Play again
+              </button>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={onExit}>
+                Back to set
+              </button>
+            </SessionRecap>
           </div>
         )}
 

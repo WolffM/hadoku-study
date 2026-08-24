@@ -29,6 +29,7 @@ import { readFact, variantId } from '../factRows.js';
 import { drift, initialState, poolMean, seedRating, type RatingState } from '../rating.js';
 import {
 	ErrorResponseSchema,
+	RatingChangesResponseSchema,
 	RatingsResponseSchema,
 	RecordAttemptsInputSchema,
 } from '../schemas.js';
@@ -196,8 +197,8 @@ const recordRoute = createRoute({
 	},
 	responses: {
 		200: {
-			description: 'Recorded',
-			content: { 'application/json': { schema: RatingsResponseSchema } },
+			description: 'Recorded, with what each answer moved',
+			content: { 'application/json': { schema: RatingChangesResponseSchema } },
 		},
 		400: {
 			description: 'An attempt names a question this set does not ask',
@@ -247,7 +248,10 @@ app.openapi(recordRoute, async (c) => {
 
 	const now = Date.now();
 	const statements: D1PreparedStatement[] = [];
-	const touched = new Set<string>();
+	// Accumulated rather than assigned, because one request may name the same
+	// question twice — a flushed outbox replaying an offline patch does exactly
+	// that, and a recap showing only the last move would understate it.
+	const moved = new Map<string, { global: number; local: number }>();
 
 	for (const attempt of input.attempts) {
 		const entry = byId.get(variantId(attempt.factId, attempt.variantKey));
@@ -308,7 +312,11 @@ app.openapi(recordRoute, async (c) => {
 		// correctly instead of writing the first outcome twice.
 		entry.globalState = globalDrift.next;
 		entry.localState = localDrift.next;
-		touched.add(entry.id);
+		const running = moved.get(entry.id) ?? { global: 0, local: 0 };
+		moved.set(entry.id, {
+			global: running.global + globalDrift.delta,
+			local: running.local + localDrift.delta,
+		});
 	}
 
 	// One batch, so an attempt cannot be counted in the ledger without its
@@ -318,7 +326,12 @@ app.openapi(recordRoute, async (c) => {
 	attemptEvent(userId, id, input.game, input.attempts.length);
 
 	return okWrapped(c, {
-		ratings: entries.filter((entry) => touched.has(entry.id)).map(toJson),
+		ratings: entries
+			.filter((entry) => moved.has(entry.id))
+			.map((entry) => {
+				const delta = moved.get(entry.id) ?? { global: 0, local: 0 };
+				return { ...toJson(entry), globalDelta: delta.global, localDelta: delta.local };
+			}),
 	});
 });
 

@@ -12,6 +12,8 @@ import type { StudyClient } from '../api/client'
 import type { CardResult, StudySetDetail } from '../api/types'
 import { toPlayCards } from '../model/playCards'
 import { recordAttempt } from '../state/attempts'
+import { noteAnswer, type Movement } from '../state/session'
+import { SessionRecap } from '../components/SessionRecap'
 import { FlipCard } from '../components/FlipCard'
 import {
   clearLocal,
@@ -56,6 +58,11 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
   })
 
   const [flipped, setFlipped] = useState(false)
+  // What this sitting has answered so far, for the recap at the end. Kept
+  // separately from the drill's own `results` because that map is a bookmark —
+  // it survives a reload and describes the PASS, while this describes the
+  // sitting and is deliberately lost with the tab.
+  const [log, setLog] = useState<Movement[]>([])
   const [cleared, setCleared] = useState(false)
   const touched = useRef(false)
 
@@ -122,8 +129,9 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
       touched.current = true
       setFlipped(false)
       if (currentCard) {
-        // Fire and forget: `recordAttempt` never throws and queues on failure,
-        // so a bookkeeping problem can never interrupt a pass.
+        // Never throws and queues on failure, so a bookkeeping problem can
+        // never interrupt a pass. The recap is updated from whatever comes
+        // back — including nothing, which is the signed-out and offline case.
         void recordAttempt(
           { client, setId: set.id, game: 'drill', enabled: syncEnabled },
           {
@@ -131,7 +139,7 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
             variantKey: currentCard.variantKey,
             result
           }
-        )
+        ).then(changes => setLog(current => noteAnswer(current, currentCard, result, changes)))
       }
       setState(current => grade(current, result))
     },
@@ -142,6 +150,7 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
     touched.current = true
     setCleared(false)
     setFlipped(false)
+    setLog([])
     setState(startDrill(set.id, cards, shuffle))
   }, [cards, set.id, shuffle])
 
@@ -185,25 +194,29 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
 
   if (complete) {
     return (
-      <section className="drill drill--done">
-        <h2 className="drill__done-title">Pass complete</h2>
-        <p className="drill__done-line">
-          <strong>{summary.got}</strong> of <strong>{summary.total}</strong> on the first try
-        </p>
-        {summary.missed > 0 && (
-          <p className="drill__done-sub">
-            {summary.missed} came round again before you had {summary.missed === 1 ? 'it' : 'them'}.
-          </p>
-        )}
-        <div className="drill__done-actions">
-          <button type="button" className="btn btn--primary btn--lg" onClick={restart}>
-            Study again
-          </button>
-          <button type="button" className="btn btn--ghost btn--lg" onClick={onExit}>
-            Back to set
-          </button>
-        </div>
-      </section>
+      <SessionRecap
+        headline="Pass complete"
+        detail={
+          <>
+            <strong>{summary.got}</strong> of <strong>{summary.total}</strong> on the first try
+            {summary.missed > 0 && (
+              <>
+                {' · '}
+                {summary.missed} came round again before you had{' '}
+                {summary.missed === 1 ? 'it' : 'them'}
+              </>
+            )}
+          </>
+        }
+        log={log}
+      >
+        <button type="button" className="btn btn--primary btn--lg" onClick={restart}>
+          Study again
+        </button>
+        <button type="button" className="btn btn--ghost btn--lg" onClick={onExit}>
+          Back to set
+        </button>
+      </SessionRecap>
     )
   }
 

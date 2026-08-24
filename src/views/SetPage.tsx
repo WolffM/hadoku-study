@@ -9,7 +9,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ApiError, type StudyClient } from '../api/client'
-import type { StudySetDetail } from '../api/types'
+import type { QuestionRating, StudySetDetail } from '../api/types'
+import { toPlayCards } from '../model/playCards'
+import { Standing } from '../components/Standing'
 import { setFileName } from '../setFile'
 import { agentBrief } from '../agentBrief'
 import { GAMES, findGame } from '../games/registry'
@@ -46,6 +48,11 @@ export function SetPage({
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [copiedBrief, setCopiedBrief] = useState(false)
+  /**
+   * How the set is going. Null until fetched, and left null for a signed-out
+   * reader — who has no ratings at all, so there is nothing to be waiting for.
+   */
+  const [ratings, setRatings] = useState<QuestionRating[] | null>(null)
   // Deleting takes a set, its cards and every reader's saved place with it,
   // and there is no undo. Two taps, not a modal — a confirm dialog on a phone
   // is a bigger interruption than the action warrants.
@@ -67,6 +74,29 @@ export function SetPage({
   }, [client, setId])
 
   useEffect(load, [load])
+
+  /**
+   * Ratings, for the standing panel.
+   *
+   * Separate from the set fetch on purpose: content is public and cacheable,
+   * a rating is private to one reader, and folding them into one response
+   * would make the set uncacheable for everyone to serve a panel only signed-in
+   * readers see. Failure is silent — the panel simply does not appear, which
+   * is the same thing a reader with nothing played sees.
+   */
+  useEffect(() => {
+    if (!syncEnabled) return
+    let cancelled = false
+    void client
+      .getRatings(setId)
+      .then(fetched => {
+        if (!cancelled) setRatings(fetched)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [client, setId, syncEnabled, playing])
 
   const togglePublished = useCallback(() => {
     if (!set) return
@@ -305,6 +335,10 @@ export function SetPage({
             )
           })}
         </ul>
+      )}
+
+      {ratings !== null && (
+        <Standing cards={toPlayCards(set.facts)} ratings={ratings} isOwner={set.isOwner} />
       )}
 
       {/* Quieter than the modes on purpose: taking a copy is a useful thing to

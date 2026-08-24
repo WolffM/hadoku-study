@@ -15,7 +15,7 @@
  */
 
 import { z } from 'zod'
-import type { AttemptInput, CardResult, QuestionRating } from '../api/types'
+import type { AttemptInput, CardResult, QuestionRating, QuestionRatingChange } from '../api/types'
 import type { StudyClient } from '../api/client'
 
 const OUTBOX_KEY = 'hadoku_study_attempt_outbox'
@@ -111,7 +111,7 @@ export interface RecordOptions {
 export async function recordAttempt(
   options: RecordOptions,
   attempt: AttemptInput
-): Promise<QuestionRating[] | null> {
+): Promise<QuestionRatingChange[] | null> {
   const { client, setId, game, enabled } = options
   if (!enabled) return null
 

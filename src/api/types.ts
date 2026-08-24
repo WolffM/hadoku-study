@@ -113,6 +113,18 @@ export interface QuestionRating {
   yourPlays: number
 }
 
+/**
+ * The same, plus what one request did to it.
+ *
+ * Only `POST /attempts` answers with these. A plain read has no movement to
+ * report, and an always-present delta that is always zero on a GET would be a
+ * field a caller has to know not to trust.
+ */
+export interface QuestionRatingChange extends QuestionRating {
+  globalDelta: number
+  localDelta: number
+}
+
 /** One self-graded answer, on its way to the ledger. */
 export interface AttemptInput {
   factId: string

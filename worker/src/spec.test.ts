@@ -98,4 +98,12 @@ describe('the routes agents need', () => {
 		expect(doc.components?.schemas?.Rating).toBeDefined();
 		expect(doc.components?.schemas?.AttemptInput).toBeDefined();
 	});
+
+	it('distinguishes a rating from a rating CHANGE', () => {
+		// Recording answers reports what moved; a plain read has no movement to
+		// report. One schema with an always-zero delta on reads would be a field
+		// every caller has to know not to trust.
+		expect(doc.components?.schemas?.RatingChange).toBeDefined();
+		expect(doc.components?.schemas?.Rating).toBeDefined();
+	});
 });
