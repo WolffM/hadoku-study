@@ -374,6 +374,30 @@ build, it breaks the next caller who trusts it:
 - **The CI job is named `check`** because that is this repo's required status
   context in `../hadoku_site/scripts/admin/repo-policy-manifest.json`.
 
+## Deploying a change to the response shape
+
+One commit in hadoku_site carries both halves of a study release: the lockfile
+bump that rebuilds the UI bundle, and the `workers/study-api/package.json` bump
+that triggers the worker deploy. They run **in parallel**, so for a minute or
+two the new UI is served against the old worker, or the reverse.
+
+That is free for a change that only ADDS fields. It is not free for one that
+renames them — v2 phase 1 renamed `cards` to `facts`, and during that window a
+page load would have found `set.facts` undefined. Nobody was looking at 03:00,
+so it cost nothing, but the window is structural and will be there next time.
+
+If you rename or remove a response field again, either read it tolerantly on
+the client for one release (`set.facts ?? []`), or ship the additive half
+first and the removal a release later.
+
+**Migrations are applied by CI, before the deploy.** study-api joined the
+`apply_migrations` list in `deploy-workers.yml` when 0003 landed; it was the
+last D1-backed worker doing it by hand, and the hand step is exactly what makes
+the ordering go wrong. The workflow lists pending migrations, asserts
+`d1_migrations` has at least its baseline of rows (so a reset tracking table
+aborts loudly instead of replaying history), applies, and only then deploys.
+Bump `min_applied_migrations` when you add one.
+
 ## Workflow
 
 Work in a worktree, never the main checkout. Commit, don't stash — `refs/stash`

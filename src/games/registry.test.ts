@@ -78,6 +78,14 @@ describe('availability is decided from the content', () => {
     // that went into it.
     const summary = findGame('drill')?.availability(detailSet([authored('a')])).summary
     expect(summary).toContain('2 questions')
-    expect(summary).toContain('1 fact')
+    expect(summary).toContain('1 facts')
+  })
+
+  it('drops the fact count when it says nothing new', () => {
+    // A set imported straight off v1 has one question per fact, and "25
+    // questions from 25 facts" reads as the system explaining itself rather
+    // than telling you anything about the set.
+    const summary = findGame('drill')?.availability(detailSet([flashcard('a')])).summary
+    expect(summary).toBe('1 question')
   })
 })

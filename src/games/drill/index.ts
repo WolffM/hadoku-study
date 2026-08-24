@@ -22,9 +22,17 @@ export const drillGame: GameDefinition = {
   availability: set => {
     if (set.facts.length === 0) return { playable: false, blocked: 'This set has no facts yet.' }
     const questions = set.variantCount
+    const noun = questions === 1 ? 'question' : 'questions'
     return {
       playable: true,
-      summary: `${questions} ${questions === 1 ? 'question' : 'questions'} from ${set.facts.length} ${set.facts.length === 1 ? 'fact' : 'facts'}`
+      // The "from N facts" half is only worth saying when it differs. On a set
+      // imported straight off v1 the two are equal, and "25 questions from 25
+      // facts" reads as a system explaining itself rather than telling you
+      // anything about the set.
+      summary:
+        questions === set.facts.length
+          ? `${questions} ${noun}`
+          : `${questions} ${noun} from ${set.facts.length} facts`
     }
   },
   Component: Drill
