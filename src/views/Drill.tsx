@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { StudyClient } from '../api/client'
 import type { CardResult, StudySetDetail } from '../api/types'
+import { toPlayCards } from '../model/playCards'
 import { FlipCard } from '../components/FlipCard'
 import {
   clearLocal,
@@ -36,7 +37,11 @@ export interface DrillProps {
 }
 
 export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps) {
-  const cardsById = useMemo(() => new Map(set.cards.map(card => [card.id, card])), [set.cards])
+  // Every question the set holds, not every fact. A fact asked four ways is
+  // four things to get right, and a pass that walked facts would ask about
+  // Worms once and call it known.
+  const cards = useMemo(() => toPlayCards(set.facts), [set.facts])
+  const cardsById = useMemo(() => new Map(cards.map(card => [card.id, card])), [cards])
 
   // Restored SYNCHRONOUSLY from the device so a resumed session paints in place
   // — a lock screen should cost nothing, and a spinner over a bookmark we
@@ -44,9 +49,9 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
   const restored = useRef<DrillState | null>(null)
   const [state, setState] = useState<DrillState>(() => {
     const local = loadLocal(set.id)
-    const usable = local ? reconcile(local, set.cards) : null
+    const usable = local ? reconcile(local, cards) : null
     restored.current = usable
-    return usable ?? startDrill(set.id, set.cards, shuffle)
+    return usable ?? startDrill(set.id, cards, shuffle)
   })
 
   const [flipped, setFlipped] = useState(false)
@@ -54,7 +59,7 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
   const touched = useRef(false)
 
   const complete = isComplete(state)
-  const summary = summarize(state, set.cards.length)
+  const summary = summarize(state, cards.length)
 
   useProgressSync(client, complete ? null : state, syncEnabled)
 
@@ -73,7 +78,7 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
         // grading in this sitting.
         if (touched.current) return
 
-        const remote = reconcile(fromServer(set.id, progress), set.cards)
+        const remote = reconcile(fromServer(set.id, progress), cards)
         if (!remote) return
 
         setState(current =>
@@ -92,7 +97,7 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
     return () => {
       cancelled = true
     }
-  }, [client, set.cards, set.id, syncEnabled])
+  }, [cards, client, set.id, syncEnabled])
 
   // ------------------------------------------------------------------------
   // A finished pass owns no bookmark
@@ -114,8 +119,8 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
     touched.current = true
     setCleared(false)
     setFlipped(false)
-    setState(startDrill(set.id, set.cards, shuffle))
-  }, [set.cards, set.id, shuffle])
+    setState(startDrill(set.id, cards, shuffle))
+  }, [cards, set.id, shuffle])
 
   // ------------------------------------------------------------------------
   // Keyboard: space flips, arrows grade
@@ -188,7 +193,7 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
     // keeps the type honest without a non-null assertion.
     return (
       <section className="drill">
-        <p className="drill__empty">This set has no cards to study yet.</p>
+        <p className="drill__empty">This set has no questions to study yet.</p>
         <button type="button" className="btn btn--ghost btn--lg" onClick={onExit}>
           Back to set
         </button>
@@ -210,7 +215,7 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
           aria-valuemin={0}
           aria-valuemax={summary.total}
           aria-valuenow={done}
-          aria-label="Cards done"
+          aria-label="Questions done"
         >
           <div
             className="drill__progress-fill"
@@ -227,6 +232,7 @@ export function Drill({ set, client, syncEnabled, shuffle, onExit }: DrillProps)
           key={`${card.id}-${done}`}
           front={card.front}
           back={card.back}
+          context={card.given}
           flipped={flipped}
           onFlip={() => setFlipped(f => !f)}
           onGrade={applyGrade}

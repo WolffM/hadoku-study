@@ -55,25 +55,36 @@ export function setEvent(
 /**
  * Summarise a deck for a business event.
  *
- * Counts rather than content: a log line is not the place for someone's cards,
- * and the questions worth asking of it are about size and shape. `boardClues`
- * is what makes "how many sets are actually playable as a board" answerable
- * without reading every row in D1.
+ * Counts rather than content: a log line is not the place for someone's facts,
+ * and the questions worth asking of it are about size and shape. The
+ * facts-to-variants ratio is what makes "how much authoring has this set had"
+ * answerable without reading every row in D1.
  */
-export function deckShape(cards: { attrs?: Record<string, unknown> | null }[]): {
-	cards: number;
-	boardClues: number;
+export function deckShape(
+	facts: {
+		slots: Record<string, string>;
+		variants: unknown[];
+		attrs?: Record<string, unknown> | null;
+	}[]
+): {
+	facts: number;
+	variants: number;
+	slots: number;
 	games: string[];
 } {
 	const games = new Set<string>();
-	let boardClues = 0;
-	for (const card of cards) {
-		for (const key of Object.keys(card.attrs ?? {})) {
-			games.add(key);
-			if (key === 'board') boardClues += 1;
-		}
+	let variants = 0;
+	let slots = 0;
+	for (const fact of facts) {
+		variants += fact.variants.length;
+		slots += Object.keys(fact.slots).length;
+		for (const key of Object.keys(fact.attrs ?? {})) games.add(key);
 	}
-	return { cards: cards.length, boardClues, games: [...games].sort() };
+	// `variants` next to `facts` is the pair worth having: the ratio is how much
+	// authoring a set has actually had. A set imported straight off v1 sits at
+	// 1.0 forever until somebody adds slots to it, and that is invisible from
+	// the fact count alone.
+	return { facts: facts.length, variants, slots, games: [...games].sort() };
 }
 
 /**

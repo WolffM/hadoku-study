@@ -5,27 +5,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { GAMES, findGame } from './registry'
-import type { StudyCard, StudySetDetail } from '../api/types'
-
-const set = (cards: StudyCard[]): StudySetDetail => ({
-  id: 's',
-  title: 'T',
-  description: null,
-  published: false,
-  cardCount: cards.length,
-  isOwner: true,
-  createdAt: 'x',
-  updatedAt: 'x',
-  cards
-})
-
-const plain = { id: 'a', front: 'f', back: 'b' }
-const clue = {
-  id: 'c',
-  front: 'f',
-  back: 'b',
-  attrs: { board: { category: 'Places', difficulty: 2 } }
-}
+import { authored, clue, detailSet, fact, flashcard } from '../testing/fixtures'
 
 describe('the registry', () => {
   it('gives every game a unique id, since it doubles as the URL and attrs key', () => {
@@ -56,36 +36,48 @@ describe('the registry', () => {
   })
 })
 
-describe('availability is decided from the cards', () => {
+describe('availability is decided from the content', () => {
   it('offers only the drill for a plain deck', () => {
-    const available = GAMES.filter(g => g.availability(set([plain])).playable).map(g => g.id)
+    const available = GAMES.filter(g => g.availability(detailSet([flashcard('a')])).playable).map(
+      g => g.id
+    )
     expect(available).toEqual(['drill'])
   })
 
-  it('offers both once a card carries board attrs', () => {
-    const available = GAMES.filter(g => g.availability(set([plain, clue])).playable).map(g => g.id)
+  it('offers both once a fact carries a board category', () => {
+    const set = detailSet([flashcard('a'), clue('c', 'Places', 2)])
+    const available = GAMES.filter(g => g.availability(set).playable).map(g => g.id)
     expect(available).toEqual(['drill', 'board'])
   })
 
   it('offers nothing for an empty set, and says why', () => {
     for (const game of GAMES) {
-      const availability = game.availability(set([]))
+      const availability = game.availability(detailSet([]))
       expect(availability.playable, game.id).toBe(false)
       expect(availability.blocked, game.id).toBeTruthy()
     }
   })
 
   it('ignores a namespace belonging to some other game', () => {
-    // A card tagged for a future mode must not make the board think it is
+    // A fact tagged for a future mode must not make the board think it is
     // playable — each game reads only its own key.
-    const other = { id: 'x', front: 'f', back: 'b', attrs: { nameThatMap: { region: 'x' } } }
-    const available = GAMES.filter(g => g.availability(set([other])).playable).map(g => g.id)
+    const other = fact({ id: 'x', attrs: { nameThatMap: { region: 'x' } } })
+    const available = GAMES.filter(g => g.availability(detailSet([other])).playable).map(g => g.id)
     expect(available).toEqual(['drill'])
   })
 
   it('summarises what you are about to play', () => {
-    const board = findGame('board')
-    expect(board?.availability(set([clue])).summary).toContain('1 clue')
-    expect(board?.availability(set([clue])).summary).toContain('200 points')
+    const set = detailSet([clue('c', 'Places', 2)])
+    expect(findGame('board')?.availability(set).summary).toContain('1 clue')
+    expect(findGame('board')?.availability(set).summary).toContain('200 points')
+  })
+
+  it('counts questions rather than facts when the drill offers a set', () => {
+    // A fact asked twice is two things to get right. Reporting the fact count
+    // would understate every authored set by exactly the amount of authoring
+    // that went into it.
+    const summary = findGame('drill')?.availability(detailSet([authored('a')])).summary
+    expect(summary).toContain('2 questions')
+    expect(summary).toContain('1 fact')
   })
 })

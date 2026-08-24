@@ -19,15 +19,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { logger } from '@wolffm/logger/client'
 import type { GameProps } from '../types'
+import { toPlayCards } from '../../model/playCards'
 import { TIERS, buildBoard, pointsFor, type BoardClue } from './model'
 
 /** How a cell was resolved. Absent means unplayed. */
 type Outcome = 'got' | 'missed'
 
 export function Board({ set, onExit }: GameProps) {
-  const board = useMemo(() => buildBoard(set.cards), [set.cards])
-  // cardId -> clue, so scoring is a lookup rather than a scan of the deck for
-  // every graded answer.
+  const board = useMemo(() => buildBoard(toPlayCards(set.facts)), [set.facts])
+  // question id -> clue, so scoring is a lookup rather than a scan for every
+  // graded answer.
   const clues = useMemo(() => {
     const index = new Map<string, BoardClue>()
     for (const column of board.cells.values()) {
@@ -44,7 +45,7 @@ export function Board({ set, onExit }: GameProps) {
       Object.entries(outcomes).reduce((total, [cardId, outcome]) => {
         if (outcome !== 'got') return total
         const clue = clues.get(cardId)
-        return total + (clue ? pointsFor(clue.difficulty) : 0)
+        return total + (clue ? pointsFor(clue.tier) : 0)
       }, 0),
     [clues, outcomes]
   )
@@ -110,7 +111,7 @@ export function Board({ set, onExit }: GameProps) {
   if (board.clueCount === 0) {
     return (
       <div className="panel">
-        <p>This set has no board clues yet — its cards need a category and a tier.</p>
+        <p>This set has no board clues yet — its facts need a category.</p>
         <button type="button" className="btn btn--ghost btn--lg" onClick={onExit}>
           Back to set
         </button>
@@ -187,8 +188,8 @@ export function Board({ set, onExit }: GameProps) {
 
         {board.unplaced.length > 0 && (
           <p className="muted board__note">
-            {board.unplaced.length} {board.unplaced.length === 1 ? 'card is' : 'cards are'} not on
-            the board. They are still in the deck when you study this set.
+            {board.unplaced.length} {board.unplaced.length === 1 ? 'question is' : 'questions are'}{' '}
+            not on the board. They are still in the deck when you study this set.
           </p>
         )}
       </div>
@@ -197,10 +198,26 @@ export function Board({ set, onExit }: GameProps) {
         <div className="board__sheet" role="dialog" aria-modal="true" aria-label="Clue">
           <div className="board__sheet-head">
             <span className="board__sheet-cat">{open.category}</span>
-            <span className="board__sheet-val">{pointsFor(open.difficulty)}</span>
+            <span className="board__sheet-val">{pointsFor(open.tier)}</span>
           </div>
 
           <div className="board__sheet-body">
+            {/*
+              Context first, and only when there is any. A question that asks
+              one slot and shows three is unanswerable without them — and a
+              migrated flashcard has none, because its prompt already IS the
+              shown side.
+            */}
+            {open.card.given.length > 0 && (
+              <dl className="board__given">
+                {open.card.given.map(({ slot, value }) => (
+                  <div key={slot} className="board__given-row">
+                    <dt className="board__given-slot">{slot}</dt>
+                    <dd className="board__given-value">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
             <p className="board__clue">{open.card.front}</p>
             {revealed && (
               <div className="board__answer">

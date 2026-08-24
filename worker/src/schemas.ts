@@ -6,13 +6,16 @@ import { z } from '@hono/zod-openapi';
 import { DetailedErrorResponseSchema, createSuccessResponseSchema } from '@wolffm/worker-utils';
 import {
 	MAX_ATTRS_LENGTH,
-	MAX_CARDS_PER_SET,
 	MAX_CATEGORY_LENGTH,
 	MAX_DESCRIPTION_LENGTH,
-	MAX_DIFFICULTY,
+	MAX_FACTS_PER_SET,
 	MAX_FIELD_LENGTH,
+	MAX_QUESTIONS_PER_FACT,
+	MAX_SLOTS_PER_FACT,
+	MAX_SLOT_NAME_LENGTH,
 	MAX_TITLE_LENGTH,
 } from './db.js';
+import { MAX_SEED_TIER, MIN_SEED_TIER } from './variants.js';
 
 export const ErrorResponseSchema = DetailedErrorResponseSchema;
 
@@ -33,23 +36,23 @@ export const SuccessResponseSchema = createSuccessResponseSchema;
 // ============================================================================
 
 /**
- * What the BOARD game hangs on a card.
+ * What the BOARD game hangs on a fact.
  *
- * Typed and published in the spec rather than left freeform, so an agent
- * generating a board reads a real schema instead of guessing at an opaque
- * object. Being inside a namespace is what lets the next game define its own
- * `difficulty` without colliding with this one.
+ * Only a column label. `difficulty` used to live here and moved out to the
+ * variant's `seedTier` in migration 0003 — a tier seeds a RATING, and ratings
+ * are core to every mode rather than particular to this one. What is left is
+ * genuinely board-specific.
  */
 export const BoardAttrsSchema = z
-	.object({
-		/** The board's column. A plain string, not a table: a category has no
-		 *  identity beyond its name and no life outside the set using it. */
+	.strictObject({
+		/** A plain string, not a table: a category has no identity beyond its
+		 *  name and no life outside the set using it. */
 		category: z.string().trim().min(1).max(MAX_CATEGORY_LENGTH).openapi({ example: 'Places' }),
-		/** The board's row. A TIER, not a score, so points can be rescaled at
-		 *  render time without rewriting a clue. */
-		difficulty: z.number().int().min(1).max(MAX_DIFFICULTY).openapi({ example: 3 }),
 	})
-	.openapi('BoardAttrs');
+	.openapi('BoardAttrs', {
+		description:
+			'The board game’s data on a fact. Strict: an unrecognised key here is rejected rather than dropped. A v1 file still carrying `difficulty` fails loudly and is told to move it to the question’s `seedTier`, which is far better than importing cleanly with every board tier silently gone. Unknown GAMES are still passed through untouched — that flexibility lives one level up, in the bag, not inside a namespace the server claims to understand.',
+	});
 
 /**
  * Per-game attributes, keyed by game id.
@@ -57,40 +60,147 @@ export const BoardAttrsSchema = z
  * `.catchall` rather than the default strip: an unknown namespace is a game
  * this deploy has not heard of, and dropping it would make the server the
  * bottleneck on every new mode. Passing it through means a game can be built
- * and played entirely in the client before any of this changes — which is the
- * whole reason this is a JSON column and not three more columns.
+ * and played entirely in the client before any of this changes.
  *
- * The cost is that unknown keys are unvalidated, so the SIZE is capped in
- * `assertAttrsSize`; without that this is an unbounded blob store.
+ * The cost is that unknown keys are unvalidated, so the SIZE is capped below;
+ * without that this is an unbounded blob store.
  */
-export const CardAttrsSchema = z
+export const FactAttrsSchema = z
 	.object({ board: BoardAttrsSchema.optional() })
 	.catchall(z.unknown())
 	.refine((attrs) => JSON.stringify(attrs).length <= MAX_ATTRS_LENGTH, {
 		message: `Game attributes must serialize to at most ${MAX_ATTRS_LENGTH} characters.`,
 	})
-	.openapi('CardAttrs', {
+	.openapi('FactAttrs', {
 		description:
 			'Per-game attributes keyed by game id. Known games are typed; unknown keys are preserved as-is so a new mode needs no schema change. The whole object must serialize to at most ' +
 			`${MAX_ATTRS_LENGTH} characters.`,
 	});
 
-/** Fields every mode shares, on the entity and the inputs alike. */
-const commonCardFields = {
-	/** Context revealed after the answer — never the answer itself. Wanted by
-	 *  every mode, so it is a real field rather than a namespace entry. */
-	detail: z.string().trim().max(MAX_FIELD_LENGTH).nullable().optional(),
-	attrs: CardAttrsSchema.nullable().optional(),
-};
+/**
+ * A slot name.
+ *
+ * Restricted to letters, digits, underscore and hyphen — NOT cosmetic. A
+ * variant key is `ask<given,given>`, so a slot name containing a comma or an
+ * angle bracket would produce a key that parses back as a different question,
+ * and ratings would silently merge two questions into one row. The delimiters
+ * cannot appear in the thing being delimited.
+ */
+const slotName = z
+	.string()
+	.trim()
+	.min(1)
+	.max(MAX_SLOT_NAME_LENGTH)
+	.regex(/^[A-Za-z0-9_-]+$/, {
+		message: 'Slot names may use letters, digits, underscores and hyphens only.',
+	});
 
-export const CardSchema = z
+/**
+ * What is true, as named values.
+ *
+ * At least TWO, because a question needs something to withhold and something
+ * to show: a one-slot fact can only ask a question with no information in it.
+ * `who` / `what` / `where` / `when` / `why` are phrased automatically; any
+ * other name works and just wants a written `prompt`.
+ */
+export const SlotsSchema = z
+	.record(slotName, z.string().trim().min(1).max(MAX_FIELD_LENGTH))
+	.refine((slots) => Object.keys(slots).length >= 2, {
+		message: 'A fact needs at least two slots — one to ask, one to show.',
+	})
+	.refine((slots) => Object.keys(slots).length <= MAX_SLOTS_PER_FACT, {
+		message: `A fact may have at most ${MAX_SLOTS_PER_FACT} slots.`,
+	})
+	.openapi('Slots', {
+		description:
+			'Named values that make up the fact. Insertion order is the order context is shown in.',
+		example: {
+			who: 'Martin Luther and Emperor Charles V',
+			what: 'Luther refused to recant his writings',
+			where: 'the Diet of Worms',
+			when: '1521',
+		},
+	});
+
+/**
+ * One declared question over a fact.
+ *
+ * `given` omitted means every other slot — the safe default, since a question
+ * with maximum context is never ambiguous. Naming FEWER givens is how a fact
+ * yields a harder question, and because the given set is part of the variant
+ * key, the two rate independently without anyone declaring which is harder.
+ */
+export const QuestionSchema = z
+	.object({
+		ask: slotName.openapi({ example: 'when', description: 'Which slot is the answer.' }),
+		given: z
+			.array(slotName)
+			.max(MAX_SLOTS_PER_FACT)
+			.optional()
+			.openapi({ description: 'Slots to show. Omit for all of the others.' }),
+		prompt: z.string().trim().max(MAX_FIELD_LENGTH).optional().openapi({
+			example: 'What year did Luther refuse to recant before Charles V?',
+			description:
+				'How the question reads. Strongly preferred over the fallback: a written prompt is what keeps a set from sounding like a form.',
+		}),
+		open: z.boolean().optional().openapi({
+			description:
+				'Whether the answer is explained rather than named. Defaults from the asked slot.',
+		}),
+		seedTier: z
+			.number()
+			.int()
+			.min(MIN_SEED_TIER)
+			.max(MAX_SEED_TIER)
+			.optional()
+			.openapi({ example: 2, description: 'Starting difficulty, 1–5. Seeds the rating only.' }),
+	})
+	.openapi('Question');
+
+/**
+ * A question as the API RETURNS it — resolved, keyed, ready to render.
+ *
+ * Derived on read and never stored. The `key` is what ratings hang off, and it
+ * is computed in exactly one place on the server so that two implementations
+ * can never disagree about which question a rating belongs to.
+ */
+export const VariantSchema = z
+	.object({
+		key: z.string().openapi({ example: 'when<what,where,who>' }),
+		ask: z.string().openapi({ example: 'when' }),
+		/** The whole front. Authored, templated, or — for a migrated flashcard —
+		 *  the single shown value. */
+		prompt: z.string().openapi({ example: 'What year did Luther refuse to recant?' }),
+		answer: z.string().openapi({ example: '1521' }),
+		given: z
+			.array(z.object({ slot: z.string(), value: z.string() }))
+			.openapi({ description: 'Context to show beside the prompt, in the author’s slot order.' }),
+		open: z.boolean().openapi({ example: false }),
+		seedTier: z.number().int().openapi({ example: 2 }),
+	})
+	.openapi('Variant');
+
+export const FactSchema = z
 	.object({
 		id: z.string().openapi({ example: 'qvv7k2mfjxtd' }),
-		front: z.string().openapi({ example: 'кот' }),
-		back: z.string().openapi({ example: 'cat' }),
-		...commonCardFields,
+		slots: SlotsSchema,
+		/**
+		 * The declarations as AUTHORED, null when the fact declares none.
+		 *
+		 * Returned alongside the resolved variants because they are not the same
+		 * thing and only one of them is content. Exporting from `variants` alone
+		 * would bake this build's fallback phrasings in as authored prompts, so
+		 * every round trip would quietly freeze a template into the set.
+		 */
+		questions: z.array(QuestionSchema).nullable(),
+		/** Context revealed after the answer — never the answer itself. */
+		detail: z.string().nullable().openapi({ example: '“Here I stand” is a later embellishment.' }),
+		attrs: FactAttrsSchema.nullable(),
+		/** Server-derived, and stripped on the way back in — which is what keeps
+		 *  a GET response a valid import body. */
+		variants: z.array(VariantSchema),
 	})
-	.openapi('Card');
+	.openapi('Fact');
 
 /**
  * A set as the API returns it.
@@ -103,10 +213,21 @@ export const CardSchema = z
 export const SetSchema = z
 	.object({
 		id: z.string().openapi({ example: 'qvv7k2mfjxtd' }),
-		title: z.string().openapi({ example: 'Russian — animals' }),
-		description: z.string().nullable().openapi({ example: 'First 40 nouns' }),
+		title: z.string().openapi({ example: 'The Reformation' }),
+		description: z.string().nullable().openapi({ example: 'Luther to the Peace of Augsburg' }),
 		published: z.boolean().openapi({ example: false }),
-		cardCount: z.number().int().openapi({ example: 40 }),
+		/** Things that are true. */
+		factCount: z.number().int().openapi({ example: 25 }),
+		/**
+		 * Questions those facts can be asked as — always at least the fact
+		 * count, and the number that actually matters when picking a mode.
+		 *
+		 * Absent from the LIST endpoints, present on every detail response.
+		 * Counting it means expanding every fact, and the only way to avoid
+		 * that in a list query would be to re-derive the expansion rule in SQL
+		 * — a second implementation of the one thing that must not have two.
+		 */
+		variantCount: z.number().int().optional().openapi({ example: 91 }),
 		isOwner: z.boolean().openapi({ example: true }),
 		createdAt: z.string().openapi({ example: '2026-08-18T00:00:00.000Z' }),
 		updatedAt: z.string().openapi({ example: '2026-08-18T00:00:00.000Z' }),
@@ -114,22 +235,24 @@ export const SetSchema = z
 	.openapi('Set');
 
 export const SetDetailSchema = SetSchema.extend({
-	cards: z.array(CardSchema),
+	/** Always present here, unlike on a list entry. */
+	variantCount: z.number().int().openapi({ example: 91 }),
+	facts: z.array(FactSchema),
 }).openapi('SetDetail');
 
 /**
  * A pass's resume bookmark.
  *
- * `results` maps cardId -> a RESULT STRING. Deliberately not a boolean: v2
- * judges typed answers with an LLM and needs a third verdict, and widening a
- * string union is not a migration.
+ * `queue` and the keys of `results` are VARIANT ids — `factId:variantKey` —
+ * not fact ids. A pass walks questions, and two questions over the same fact
+ * are two separate things to get right.
  */
 export const ProgressSchema = z
 	.object({
-		queue: z.array(z.string()).openapi({ example: ['qvv7k2mfjxtd'] }),
+		queue: z.array(z.string()).openapi({ example: ['qvv7k2mfjxtd:when<what,where,who>'] }),
 		results: z
 			.record(z.string(), z.enum(['got', 'missed']))
-			.openapi({ example: { qvv7k2mfjxtd: 'got' } }),
+			.openapi({ example: { 'qvv7k2mfjxtd:when<what,where,who>': 'got' } }),
 		updatedAt: z.string().openapi({ example: '2026-08-18T00:00:00.000Z' }),
 	})
 	.openapi('Progress');
@@ -138,10 +261,24 @@ export const ProgressSchema = z
 // Inputs
 // ============================================================================
 
-const cardInput = z.object({
-	front: z.string().trim().min(1).max(MAX_FIELD_LENGTH),
-	back: z.string().trim().min(1).max(MAX_FIELD_LENGTH),
-	...commonCardFields,
+const factInput = z.object({
+	/**
+	 * The fact's existing id, handed back so a save keeps its rating history.
+	 *
+	 * Server-owned, and OPTIONAL because most callers have no business
+	 * inventing one — a create always mints. On `PUT /sets/{id}` an id is
+	 * honoured only when it already belongs to that set, so re-importing your
+	 * own export preserves everything a set has learned, while a hand-edited
+	 * file cannot adopt another set's history.
+	 */
+	id: z.string().max(64).optional(),
+	slots: SlotsSchema,
+	questions: z.array(QuestionSchema).max(MAX_QUESTIONS_PER_FACT).nullable().optional().openapi({
+		description:
+			'Omit to ask every slot in turn, giving all the others. Explicitly null means the same thing — a fact that declares none exports as null, and the export has to parse straight back in.',
+	}),
+	detail: z.string().trim().max(MAX_FIELD_LENGTH).nullable().optional(),
+	attrs: FactAttrsSchema.nullable().optional(),
 });
 
 /**
@@ -150,17 +287,22 @@ const cardInput = z.object({
  * This is deliberately a subset of what `GET /sets/{id}` returns, and zod
  * strips unknown keys rather than rejecting them, so the export IS the import:
  * the `set` object from a GET can be POSTed back verbatim, server-owned fields
- * (`id`, `isOwner`, `cardCount`, `createdAt`, `updatedAt`, and each card's
- * `id`) and all. That property is the whole reason a set is portable as one
- * file, so `schemas.round-trip.test.ts` asserts it rather than leaving it to
- * be broken silently by a stray `.strict()`.
+ * (`id`, `isOwner`, `factCount`, `variantCount`, `createdAt`, `updatedAt`, and
+ * each fact's `variants`) and all. That property is the whole reason a set is
+ * portable as one file, so `schemas.test.ts` asserts it rather than leaving it
+ * to be broken silently by a stray `.strict()`.
+ *
+ * A fact's `id` is the one server-owned field that is READ rather than
+ * stripped — see `factInput.id`. It is ignored here, where there is no set for
+ * it to name, and honoured by PUT, where it is what keeps a save from
+ * discarding the set's rating history.
  */
 export const CreateSetInputSchema = z
 	.object({
 		title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
 		description: z.string().trim().max(MAX_DESCRIPTION_LENGTH).nullable().optional(),
 		/** Optional so a paste-import lands as one request rather than two. */
-		cards: z.array(cardInput).max(MAX_CARDS_PER_SET).optional(),
+		facts: z.array(factInput).max(MAX_FACTS_PER_SET).optional(),
 		/**
 		 * Publish on create, so importing an already-public set is one request
 		 * rather than a POST followed by a PATCH. Omitted means private, which
@@ -173,9 +315,9 @@ export const CreateSetInputSchema = z
 /**
  * The body of `PUT /sets/{id}` — the same file, written over an existing set.
  *
- * `cards` is REQUIRED here where it is optional on create: a PUT states the
+ * `facts` is REQUIRED here where it is optional on create: a PUT states the
  * set's whole content, and letting it be omitted would make "replace this set"
- * and "leave the deck alone" indistinguishable.
+ * and "leave the content alone" indistinguishable.
  *
  * `published` omitted means LEAVE VISIBILITY ALONE, not "make private". A file
  * describes a set's CONTENT; publication is access control on the row, not
@@ -187,7 +329,7 @@ export const ReplaceSetInputSchema = z
 	.object({
 		title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
 		description: z.string().trim().max(MAX_DESCRIPTION_LENGTH).nullable().optional(),
-		cards: z.array(cardInput).max(MAX_CARDS_PER_SET),
+		facts: z.array(factInput).max(MAX_FACTS_PER_SET),
 		published: z.boolean().optional(),
 	})
 	.openapi('ReplaceSetInput');
@@ -200,23 +342,9 @@ export const UpdateSetInputSchema = z
 	})
 	.openapi('UpdateSetInput');
 
-/**
- * Cards are replaced WHOLESALE, never patched one at a time.
- *
- * A set is a few kB of text that the editor already holds in full, so a
- * per-card PATCH API would buy nothing but a reorder/insert/delete protocol
- * and the drift that comes with it. The write is one transaction: delete all,
- * insert all.
- */
-export const ReplaceCardsInputSchema = z
-	.object({
-		cards: z.array(cardInput).max(MAX_CARDS_PER_SET),
-	})
-	.openapi('ReplaceCardsInput');
-
 export const PutProgressInputSchema = z
 	.object({
-		queue: z.array(z.string()).max(MAX_CARDS_PER_SET),
+		queue: z.array(z.string()).max(MAX_FACTS_PER_SET * MAX_QUESTIONS_PER_FACT),
 		results: z.record(z.string(), z.enum(['got', 'missed'])),
 	})
 	.openapi('PutProgressInput');
@@ -237,10 +365,6 @@ export const SetResponseSchema = SuccessResponseSchema(z.object({ set: SetSchema
 	'SetResponse'
 );
 
-export const CardsResponseSchema = SuccessResponseSchema(
-	z.object({ cards: z.array(CardSchema) })
-).openapi('CardsResponse');
-
 export const ProgressResponseSchema = SuccessResponseSchema(
 	z.object({ progress: ProgressSchema.nullable() })
 ).openapi('ProgressResponse');
@@ -249,4 +373,4 @@ export const DeleteResponseSchema = SuccessResponseSchema(z.object({ setId: z.st
 	'DeleteResponse'
 );
 
-export type CardInput = z.infer<typeof cardInput>;
+export type FactInput = z.infer<typeof factInput>;

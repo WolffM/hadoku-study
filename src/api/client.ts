@@ -9,7 +9,7 @@
 
 import { logger } from '@wolffm/logger/client'
 import { getSessionId } from './session'
-import type { CardInput, StoredProgress, StudySet, StudySetDetail } from './types'
+import type { FactInput, StoredProgress, StudySet, StudySetDetail } from './types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -145,7 +145,7 @@ export function createClient(base: string) {
     createSet: (input: {
       title: string
       description?: string | null
-      cards?: CardInput[]
+      facts?: FactInput[]
       published?: boolean
     }) =>
       request<{ set: StudySetDetail }>(trimmed, '/sets', {
@@ -154,19 +154,23 @@ export function createClient(base: string) {
       }).then(d => d.set),
 
     /**
-     * Write a whole set — metadata and every card — in ONE request.
+     * Write a whole set — metadata and every fact — in ONE request.
      *
-     * The editor holds the complete set, so saving it as a PATCH followed by a
-     * card PUT would put a set on the wire in two pieces that can half-land:
-     * the rename succeeds, the deck write fails, and the set is left claiming
-     * to be something it is not. The worker does both in one D1 transaction.
+     * The editor holds the complete set, so saving it in two pieces could
+     * half-land: the rename succeeds, the content write fails, and the set is
+     * left claiming to be something it is not. The worker does both in one D1
+     * transaction.
+     *
+     * Send each fact back with the `id` it arrived with. An id the set already
+     * owns is kept, and the ratings hanging off it survive; drop it and the
+     * server mints a new one, silently discarding that question's history.
      */
     replaceSet: (
       id: string,
       input: {
         title: string
         description?: string | null
-        cards: CardInput[]
+        facts: FactInput[]
         published?: boolean
       }
     ) =>

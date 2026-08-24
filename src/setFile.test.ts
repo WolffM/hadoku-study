@@ -1,157 +1,189 @@
 /**
- * The importer is deliberately forgiving, and forgiving code fails quietly.
+ * A set has to survive leaving and coming back.
  *
- * Every branch here corresponds to something a real person will paste: a file
- * they exported, the raw envelope `curl` writes, a column out of a
- * spreadsheet, an array someone's script produced. Getting one wrong does not
- * throw — it silently drops cards — so each shape is pinned.
+ * Two properties, and both have teeth. The export has to parse as an import
+ * with nothing edited — that is the whole reason a set is one file. And a v1
+ * export, written before facts existed, has to land as the same content
+ * migration 0003 made of the v1 rows, because plenty of those files exist on
+ * disk and refusing them would strand sets that convert perfectly.
  */
 
 import { describe, expect, it } from 'vitest'
 import {
+  SET_FILE_VERSION,
   SetFileError,
+  factsFromCards,
   parseDelimited,
   parseImport,
   serializeSetFile,
   setFileName,
   toSetFile
 } from './setFile'
-import type { StudySetDetail } from './api/types'
+import { authored, clue, detailSet, flashcard } from './testing/fixtures'
 
-const set: StudySetDetail = {
-  id: 'qvv7k2mfjxtd',
-  title: 'Russian — animals',
-  description: 'First 40 nouns',
-  published: true,
-  cardCount: 2,
-  isOwner: true,
-  createdAt: '2026-08-18T00:00:00.000Z',
-  updatedAt: '2026-08-18T00:00:00.000Z',
-  cards: [
-    { id: 'card-one', front: 'кот', back: 'cat' },
-    { id: 'card-two', front: 'собака', back: 'dog' }
-  ]
-}
+const roundTrip = (set: Parameters<typeof toSetFile>[0]) =>
+  parseImport(JSON.stringify(toSetFile(set)))
 
-describe('export', () => {
-  it('writes the content and drops the server-owned fields', () => {
-    const file = toSetFile(set)
-    expect(file.title).toBe('Russian — animals')
-    expect(file.published).toBe(true)
-    expect(file.cards).toEqual([
-      { front: 'кот', back: 'cat' },
-      { front: 'собака', back: 'dog' }
-    ])
-    expect(file).not.toHaveProperty('id')
-    expect(file).not.toHaveProperty('isOwner')
-    expect(file).not.toHaveProperty('cardCount')
+describe('exporting', () => {
+  it('writes the format marker and the schema pointer', () => {
+    const file = toSetFile(detailSet([flashcard('a')]))
+    expect(file.formatVersion).toBe(SET_FILE_VERSION)
+    expect(String(file.$schema)).toContain('openapi.json')
   })
 
-  it('round-trips through its own importer', () => {
-    const parsed = parseImport(serializeSetFile(set))
-    expect(parsed.title).toBe('Russian — animals')
-    expect(parsed.description).toBe('First 40 nouns')
-    expect(parsed.cards).toHaveLength(2)
+  it('never writes the derived variants', () => {
+    // They are recomputed from slots and questions on every read. A copy in
+    // the file would be an authoritative-looking second answer, wrong the
+    // moment a slot is edited.
+    const file = toSetFile(detailSet([authored('a')])) as { facts: Record<string, unknown>[] }
+    expect(file.facts[0]).not.toHaveProperty('variants')
+    expect(file.facts[0].slots).toBeDefined()
+    expect(file.facts[0].questions).toBeDefined()
   })
 
-  it('names the file after the set without letting the title escape it', () => {
-    expect(setFileName('Russian — animals')).toBe('russian-animals.json')
-    expect(setFileName('../../etc/passwd')).toBe('etc-passwd.json')
-    expect(setFileName('日本語')).toBe('study-set.json')
+  it('writes each fact’s id, which is what carries its rating history', () => {
+    const file = toSetFile(detailSet([flashcard('keep-me')])) as {
+      facts: Record<string, unknown>[]
+    }
+    expect(file.facts[0].id).toBe('keep-me')
+  })
+
+  it('omits what a fact has nothing to say about', () => {
+    const file = toSetFile(detailSet([flashcard('a')])) as { facts: Record<string, unknown>[] }
+    expect(file.facts[0]).not.toHaveProperty('detail')
+    expect(file.facts[0]).not.toHaveProperty('attrs')
+  })
+
+  it('ends with a newline, so the file is a well-formed text file', () => {
+    expect(serializeSetFile(detailSet([flashcard('a')]))).toMatch(/\n$/)
   })
 })
 
-describe('import accepts what people actually have', () => {
-  it('a bare set file', () => {
-    const parsed = parseImport('{"title":"T","cards":[{"front":"a","back":"b"}]}')
-    expect(parsed.title).toBe('T')
-    expect(parsed.cards).toEqual([{ front: 'a', back: 'b' }])
+describe('a round trip loses nothing', () => {
+  it('keeps slots, questions and ids', () => {
+    const parsed = roundTrip(detailSet([authored('a')], { title: 'The Reformation' }))
+    expect(parsed.title).toBe('The Reformation')
+    expect(parsed.facts[0].id).toBe('a')
+    expect(parsed.facts[0].slots.when).toBe('1521')
+    expect(parsed.facts[0].questions?.map(q => q.ask)).toEqual(['when', 'where'])
   })
 
-  it('the wrapped envelope curl writes straight off the API', () => {
-    const envelope = JSON.stringify({ success: true, data: { set } })
-    const parsed = parseImport(envelope)
-    expect(parsed.title).toBe('Russian — animals')
-    expect(parsed.cards).toHaveLength(2)
+  it('keeps a board category, so a board does not degrade to a deck', () => {
+    const parsed = roundTrip(detailSet([clue('a', 'Places', 4)]))
+    expect(parsed.facts[0].attrs?.board).toEqual({ category: 'Places' })
+    expect(parsed.facts[0].questions?.[0].seedTier).toBe(4)
   })
 
-  it('a bare array of cards, with no title to take', () => {
-    const parsed = parseImport('[{"front":"a","back":"b"}]')
-    expect(parsed.title).toBeUndefined()
-    expect(parsed.cards).toEqual([{ front: 'a', back: 'b' }])
-  })
-
-  it('a tab-separated paste out of a spreadsheet', () => {
-    const parsed = parseImport('кот\tcat\nсобака\tdog')
-    expect(parsed.cards).toEqual([
-      { front: 'кот', back: 'cat' },
-      { front: 'собака', back: 'dog' }
-    ])
-  })
-
-  it('a comma-separated list, keeping later commas with the back', () => {
-    expect(parseDelimited('cat, the animal')).toEqual([{ front: 'cat', back: 'the animal' }])
+  it('keeps a namespace this bundle has never heard of', () => {
+    const set = detailSet([{ ...flashcard('a'), attrs: { nameThatMap: { region: 'Maguuma' } } }])
+    expect(roundTrip(set).facts[0].attrs?.nameThatMap).toEqual({ region: 'Maguuma' })
   })
 })
 
-describe('game attributes survive the file format', () => {
-  const withAttrs: StudySetDetail = {
-    ...set,
+describe('reading a v1 file, from before facts existed', () => {
+  const v1 = {
+    version: 1,
+    title: 'Reformation Jeopardy',
     cards: [
       {
-        id: 'c1',
-        front: 'Clue',
-        back: 'Answer',
-        detail: 'Why.',
-        attrs: { board: { category: 'Places', difficulty: 3 } }
-      }
+        front: 'Where did Luther refuse to recant?',
+        back: 'Worms',
+        detail: '1521.',
+        attrs: { board: { category: 'Places', difficulty: 4 } }
+      },
+      { front: 'кот', back: 'cat' }
     ]
   }
 
-  it('exports the bag whole', () => {
-    const file = toSetFile(withAttrs)
-    const cards = file.cards as Record<string, unknown>[]
-    expect(cards[0].attrs).toEqual({ board: { category: 'Places', difficulty: 3 } })
-    expect(cards[0].detail).toBe('Why.')
+  it('turns each card into a two-slot fact', () => {
+    const parsed = parseImport(JSON.stringify(v1))
+    expect(parsed.title).toBe('Reformation Jeopardy')
+    expect(parsed.facts).toHaveLength(2)
+    expect(parsed.facts[1].slots).toEqual({ prompt: 'кот', answer: 'cat' })
   })
 
-  it('omits the bag entirely on a plain deck', () => {
-    const cards = toSetFile(set).cards as Record<string, unknown>[]
-    expect(cards[0]).not.toHaveProperty('attrs')
-    expect(cards[0]).not.toHaveProperty('detail')
+  it('declares the one question the card was, not the reverse as well', () => {
+    // The default expansion would also generate prompt-from-answer, quietly
+    // doubling everybody's deck on import.
+    const parsed = parseImport(JSON.stringify(v1))
+    expect(parsed.facts[1].questions).toEqual([{ ask: 'answer', given: ['prompt'], seedTier: 3 }])
   })
 
-  it('round-trips through its own importer', () => {
-    const parsed = parseImport(serializeSetFile(withAttrs))
-    expect(parsed.cards[0].attrs).toEqual({ board: { category: 'Places', difficulty: 3 } })
+  it('moves the board difficulty to the question’s seed tier', () => {
+    // The server REJECTS a stray `difficulty` in the board namespace, so a file
+    // that kept it there would fail the whole import.
+    const parsed = parseImport(JSON.stringify(v1))
+    expect(parsed.facts[0].questions?.[0].seedTier).toBe(4)
+    expect(parsed.facts[0].attrs?.board).toEqual({ category: 'Places' })
   })
 
-  it('carries a namespace this bundle has never heard of', () => {
-    // The file format must not be a place where a new game's data goes to die.
-    // Validating namespaces here would mean this module knowing every game.
-    const parsed = parseImport(
-      JSON.stringify({
-        title: 'T',
-        cards: [{ front: 'a', back: 'b', attrs: { nameThatMap: { region: 'Maguuma' } } }]
-      })
-    )
-    expect(parsed.cards[0].attrs).toEqual({ nameThatMap: { region: 'Maguuma' } })
+  it('drops a board namespace that held nothing but a difficulty', () => {
+    const [fact] = factsFromCards([{ front: 'a', back: 'b', attrs: { board: { difficulty: 2 } } }])
+    expect(fact.attrs).toBeUndefined()
+    expect(fact.questions?.[0].seedTier).toBe(2)
+  })
+
+  it('keeps other games’ namespaces while moving the board’s', () => {
+    const [fact] = factsFromCards([
+      {
+        front: 'a',
+        back: 'b',
+        attrs: { board: { category: 'P', difficulty: 5 }, nameThatMap: { region: 'x' } }
+      }
+    ])
+    expect(fact.attrs).toEqual({ board: { category: 'P' }, nameThatMap: { region: 'x' } })
+  })
+
+  it('carries the detail across', () => {
+    expect(parseImport(JSON.stringify(v1)).facts[0].detail).toBe('1521.')
   })
 })
 
-describe('import refuses what it cannot read, rather than importing nothing', () => {
-  const rejects = (text: string) => {
+describe('reading whatever is on the clipboard', () => {
+  it('unwraps a raw API response', () => {
+    // `curl <url> > set.json` writes the whole envelope, and telling someone
+    // their own export is the wrong shape is a pointless obstacle.
+    const body = { success: true, data: { set: toSetFile(detailSet([flashcard('a')])) } }
+    expect(parseImport(JSON.stringify(body)).facts).toHaveLength(1)
+  })
+
+  it('accepts a bare array of facts', () => {
+    const text = JSON.stringify([{ slots: { prompt: 'a', answer: 'b' } }])
+    expect(parseImport(text).facts).toHaveLength(1)
+  })
+
+  it('accepts a bare array of v1 cards', () => {
+    const text = JSON.stringify([{ front: 'a', back: 'b' }])
+    expect(parseImport(text).facts[0].slots).toEqual({ prompt: 'a', answer: 'b' })
+  })
+
+  it('reads a spreadsheet paste, tab first', () => {
+    const facts = parseDelimited('кот\tcat\nсобака\tdog')
+    expect(facts.map(f => f.slots.answer)).toEqual(['cat', 'dog'])
+  })
+
+  it('keeps everything after the first comma with the answer', () => {
+    expect(parseDelimited('кот, the animal')[0].slots.answer).toBe('the animal')
+  })
+
+  it('drops a fact with fewer than two slots rather than storing a stub', () => {
+    const text = JSON.stringify({ title: 'T', facts: [{ slots: { only: 'one' } }] })
     expect(() => parseImport(text)).toThrow(SetFileError)
-  }
+  })
 
-  it('empty input', () => rejects('   '))
-  it('malformed JSON', () => rejects('{"title": "T", cards: ['))
-  it('JSON with no cards', () => rejects('{"title":"T"}'))
-  it('an empty JSON array', () => rejects('[]'))
+  it('says something useful when there is nothing to read', () => {
+    expect(() => parseImport('   ')).toThrow(SetFileError)
+    expect(() => parseImport('{"title":"T"}')).toThrow(SetFileError)
+    expect(() => parseImport('{ not json')).toThrow(SetFileError)
+  })
+})
 
-  it('reports malformed JSON as JSON, not as an empty card list', () => {
-    // The fallback path would otherwise swallow this and say "no cards found",
-    // sending whoever pasted it looking for the wrong problem.
-    expect(() => parseImport('{"title": "T", cards: [')).toThrow(/could not be parsed/i)
+describe('the download filename', () => {
+  it('slugs the title', () => {
+    expect(setFileName('Reformation Jeopardy!')).toBe('reformation-jeopardy.json')
+  })
+
+  it('falls back when a title slugs to nothing', () => {
+    expect(setFileName('!!!')).toBe('study-set.json')
   })
 })

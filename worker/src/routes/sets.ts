@@ -17,7 +17,7 @@ import {
 	type HadokuAuthContext,
 } from '@wolffm/worker-utils';
 import {
-	listCards,
+	listFacts,
 	listOwnedSets,
 	listPublishedSets,
 	loadSetForRead,
@@ -27,21 +27,20 @@ import {
 } from '../db.js';
 import { readerUserId, resolveWriter } from '../auth.js';
 import {
-	CardsResponseSchema,
 	CreateSetInputSchema,
 	DeleteResponseSchema,
 	ErrorResponseSchema,
-	ReplaceCardsInputSchema,
 	ReplaceSetInputSchema,
 	SetDetailResponseSchema,
 	SetResponseSchema,
 	SetsResponseSchema,
 	UpdateSetInputSchema,
-	type CardInput,
+	type FactInput,
 } from '../schemas.js';
+import { expandFact, type QuestionDecl, type Slots } from '../variants.js';
 import { AUTHENTICATED, OPTIONAL_AUTH } from '../security.js';
 import { deckShape, setEvent } from '../telemetry.js';
-import type { AppEnv, CardRow, SetRow } from '../types.js';
+import type { AppEnv, FactRow, SetRow } from '../types.js';
 
 interface RouteContext {
 	Bindings: AppEnv;
@@ -52,13 +51,22 @@ const app = new OpenAPIHono<RouteContext>();
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
-function toSetJson(row: SetRow, cardCount: number, viewerId: string | null) {
+/**
+ * A set as a LIST entry — no variant count.
+ *
+ * Counting variants means expanding every fact of every set, and the only way
+ * to avoid that in a list query would be to re-derive the expansion rule in
+ * SQL: a second implementation of the one thing that must not have two. A list
+ * says how many facts there are; the detail response says how many questions
+ * they make.
+ */
+function toSetJson(row: SetRow, factCount: number, viewerId: string | null) {
 	return {
 		id: row.id,
 		title: row.title,
 		description: row.description,
 		published: row.published_at !== null,
-		cardCount,
+		factCount,
 		isOwner: viewerId !== null && row.owner_user_id === viewerId,
 		createdAt: iso(row.created_at),
 		updatedAt: iso(row.updated_at),
@@ -66,14 +74,14 @@ function toSetJson(row: SetRow, cardCount: number, viewerId: string | null) {
 }
 
 /**
- * Parse the stored attrs bag.
+ * Parse a stored JSON object column.
  *
- * Returns null rather than throwing on malformed JSON: the column is only ever
- * written from a validated serialization, so a bad value means corruption
+ * Returns null rather than throwing on malformed JSON: these columns are only
+ * ever written from a validated serialization, so a bad value means corruption
  * upstream, and failing the whole GET would take the set's readable content
- * down with it. A card that loses its game attributes is still a flashcard.
+ * down with it.
  */
-function parseAttrs(raw: string | null): Record<string, unknown> | null {
+function parseObject(raw: string | null): Record<string, unknown> | null {
 	if (raw === null || raw === '') return null;
 	try {
 		const parsed: unknown = JSON.parse(raw);
@@ -85,33 +93,77 @@ function parseAttrs(raw: string | null): Record<string, unknown> | null {
 	}
 }
 
-const toCardJson = (row: CardRow) => ({
-	id: row.id,
-	front: row.front,
-	back: row.back,
-	detail: row.detail,
-	attrs: parseAttrs(row.attrs),
-});
+/** Same tolerance, for the questions array. Null reads as "not declared",
+ *  which `expandFact` already handles by asking every slot in turn. */
+function parseQuestions(raw: string | null): QuestionDecl[] | null {
+	if (raw === null || raw === '') return null;
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		return Array.isArray(parsed) ? (parsed as QuestionDecl[]) : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Slot values are strings by schema; anything else is corruption and is
+ *  dropped rather than rendered as "[object Object]" on someone's board. */
+function parseSlots(raw: string | null): Slots {
+	const parsed = parseObject(raw);
+	if (!parsed) return {};
+	const out: Slots = {};
+	for (const [name, value] of Object.entries(parsed)) {
+		if (typeof value === 'string') out[name] = value;
+	}
+	return out;
+}
+
+function toFactJson(row: FactRow) {
+	const slots = parseSlots(row.slots);
+	const questions = parseQuestions(row.questions);
+	return {
+		id: row.id,
+		slots,
+		// What was authored, next to what it resolves to. Both are needed: one
+		// is the content a file carries, the other is what a game renders.
+		questions,
+		detail: row.detail,
+		attrs: parseObject(row.attrs),
+		// Derived here and nowhere else. The client renders what it is handed.
+		variants: expandFact(slots, questions),
+	};
+}
 
 const listJson = (rows: SetWithCount[], viewerId: string | null) =>
-	rows.map((row) => toSetJson(row, row.card_count, viewerId));
+	rows.map((row) => toSetJson(row, row.fact_count, viewerId));
 
-/** Columns bound per card row — keep in step with the INSERT below. */
-export const CARD_COLUMNS = 7;
+/** Columns bound per fact row — keep in step with the INSERT below. */
+export const FACT_COLUMNS = 7;
 
 /**
- * Serialize a card's attrs for storage.
+ * Serialize a fact's attrs for storage.
  *
  * The SIZE limit is enforced in the schema rather than here, so an oversized
  * bag is a validation error with a field path instead of an exception thrown
  * three layers down. An empty object stores as NULL: `{}` and "no attrs" mean
- * the same thing, and keeping one representation means a card cannot be
- * not-a-board-clue in two distinguishable ways.
+ * the same thing, and keeping one representation means a fact cannot be
+ * unclaimed-by-any-game in two distinguishable ways.
  */
-function serializeAttrs(attrs: CardInput['attrs']): string | null {
+function serializeAttrs(attrs: FactInput['attrs']): string | null {
 	if (attrs === null || attrs === undefined) return null;
 	if (Object.keys(attrs).length === 0) return null;
 	return JSON.stringify(attrs);
+}
+
+/**
+ * Same rule for declared questions: an empty array means "not declared",
+ * which is what NULL already means. One representation, not two.
+ *
+ * Null is accepted as well as undefined because that is what a fact with no
+ * declarations EXPORTS as, and the export has to parse straight back in.
+ */
+function serializeQuestions(questions: FactInput['questions']): string | null {
+	if (questions === undefined || questions === null || questions.length === 0) return null;
+	return JSON.stringify(questions);
 }
 
 /**
@@ -134,7 +186,7 @@ export const D1_MAX_BOUND_PARAMS = 100;
  * gives no signal until someone writes a set past the new limit —
  * `sets.chunking.test.ts` pins the arithmetic so the mistake cannot recur.
  */
-export const INSERT_CHUNK = Math.floor(D1_MAX_BOUND_PARAMS / CARD_COLUMNS);
+export const INSERT_CHUNK = Math.floor(D1_MAX_BOUND_PARAMS / FACT_COLUMNS);
 
 function chunk<T>(items: T[], size: number): T[][] {
 	const out: T[][] = [];
@@ -143,54 +195,105 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 /**
- * The statements that swap a set's whole deck — NOT run here.
+ * Decide what id each incoming fact keeps.
+ *
+ * Saving a set replaces its facts WHOLESALE — one DELETE, then INSERTs — which
+ * in v1 was free, because nothing outside the set referred to a card by id.
+ * Ratings changed that: they hang off `fact_id`, so re-minting ids on every
+ * save would quietly discard the entire play history of a set each time its
+ * owner fixed a typo. The rating would not be wrong, it would be GONE, with no
+ * error anywhere.
+ *
+ * So an exported file carries each fact's id, and a PUT hands it back. An id
+ * is honoured only when it already belongs to THIS set, which is what stops a
+ * hand-edited file from adopting another set's rating history, and duplicates
+ * within one payload are re-minted so two facts can never claim one row.
+ */
+export function resolveFactIds(facts: FactInput[], existing: Set<string>): string[] {
+	const claimed = new Set<string>();
+	return facts.map((fact) => {
+		const wanted = fact.id;
+		if (wanted !== undefined && existing.has(wanted) && !claimed.has(wanted)) {
+			claimed.add(wanted);
+			return wanted;
+		}
+		return newId();
+	});
+}
+
+/**
+ * The statements that swap a set's whole content — NOT run here.
  *
  * Returned rather than executed so a caller can put them in the SAME D1 batch
- * as its own writes. `PUT /sets/{id}` replaces metadata and cards together and
+ * as its own writes. `PUT /sets/{id}` replaces metadata and facts together and
  * must not be able to land half of that; composing one batch is what makes the
  * two atomic, since D1 runs a batch in an implicit transaction. A
- * delete-then-insert pair of separate statements could leave a set holding a
- * partial deck, and the failure would be silent data loss on someone's set.
+ * delete-then-insert pair of separate statements could leave a set holding
+ * partial content, and the failure would be silent data loss on someone's set.
  */
-function cardReplacementStatements(db: D1Database, setId: string, cards: CardInput[]) {
-	const inserts = chunk(cards, INSERT_CHUNK).map((group, groupIndex) => {
+function factReplacementStatements(
+	db: D1Database,
+	setId: string,
+	facts: FactInput[],
+	ids: string[]
+) {
+	const inserts = chunk(facts, INSERT_CHUNK).map((group, groupIndex) => {
 		const values = group.map((_, i) => {
-			const p = i * CARD_COLUMNS;
-			const slots = Array.from({ length: CARD_COLUMNS }, (_unused, n) => `?${p + n + 1}`);
+			const p = i * FACT_COLUMNS;
+			const slots = Array.from({ length: FACT_COLUMNS }, (_unused, n) => `?${p + n + 1}`);
 			return `(${slots.join(', ')})`;
 		});
-		const bindings = group.flatMap((card, i) => {
+		const bindings = group.flatMap((fact, i) => {
 			const position = groupIndex * INSERT_CHUNK + i;
 			return [
-				newId(),
+				ids[position],
 				setId,
-				card.front,
-				card.back,
 				position,
+				JSON.stringify(fact.slots),
+				serializeQuestions(fact.questions),
 				// `?? null` rather than omitting: an absent optional field and an
 				// explicit null both mean "not set", and D1 will not bind
 				// `undefined`.
-				card.detail ?? null,
-				serializeAttrs(card.attrs),
+				fact.detail ?? null,
+				serializeAttrs(fact.attrs),
 			];
 		});
 		return db
 			.prepare(
-				`INSERT INTO cards (id, set_id, front, back, position, detail, attrs)
+				`INSERT INTO facts (id, set_id, position, slots, questions, detail, attrs)
 				 VALUES ${values.join(', ')}`
 			)
 			.bind(...bindings);
 	});
 
-	return [db.prepare(`DELETE FROM cards WHERE set_id = ?1`).bind(setId), ...inserts];
+	return [db.prepare(`DELETE FROM facts WHERE set_id = ?1`).bind(setId), ...inserts];
 }
 
-/** Swap a set's deck and stamp it as updated, as one transaction. */
-function replaceCardsBatch(db: D1Database, setId: string, cards: CardInput[], now: number) {
-	return db.batch([
-		...cardReplacementStatements(db, setId, cards),
-		db.prepare(`UPDATE sets SET updated_at = ?1 WHERE id = ?2`).bind(now, setId),
-	]);
+/** The ids a set's facts currently hold, so a PUT can hand them back. */
+async function existingFactIds(db: D1Database, setId: string): Promise<Set<string>> {
+	const res = await db
+		.prepare(`SELECT id FROM facts WHERE set_id = ?1`)
+		.bind(setId)
+		.all<{ id: string }>();
+	return new Set(res.results.map((row) => row.id));
+}
+
+/** Read a set's facts back as the API returns them. */
+async function factsJson(db: D1Database, setId: string) {
+	return (await listFacts(db, setId)).map(toFactJson);
+}
+
+/** A set with its whole content, counted from the facts it is already sending. */
+function toSetDetailJson<F extends { variants: unknown[] }>(
+	row: SetRow,
+	facts: F[],
+	viewerId: string | null
+) {
+	return {
+		...toSetJson(row, facts.length, viewerId),
+		variantCount: facts.reduce((total, fact) => total + fact.variants.length, 0),
+		facts,
+	};
 }
 
 /**
@@ -305,9 +408,12 @@ app.openapi(createRouteDef, async (c) => {
 	const now = Date.now();
 	const id = newId();
 	const publishedAt = input.published === true ? now : null;
-	const cards = input.cards ?? [];
+	const facts = input.facts ?? [];
+	// Every id is minted. A create has no set for an incoming id to belong to,
+	// so honouring one would let a file claim rating history it never earned.
+	const ids = facts.map(() => newId());
 
-	// The set row and its cards go in ONE batch, so a create either lands whole
+	// The set row and its facts go in ONE batch, so a create either lands whole
 	// or not at all. Writing them as two awaited statements left an empty,
 	// titled set behind whenever the card insert failed — which is exactly what
 	// a run of them did on 2026-08-21, when every import over 14 cards hit D1's
@@ -320,7 +426,7 @@ app.openapi(createRouteDef, async (c) => {
 				 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)`
 			)
 			.bind(id, writer.userId, input.title, input.description ?? null, publishedAt, now),
-		...cardReplacementStatements(db, id, cards),
+		...factReplacementStatements(db, id, facts, ids),
 	]);
 
 	const row: SetRow = {
@@ -333,17 +439,14 @@ app.openapi(createRouteDef, async (c) => {
 		updated_at: now,
 	};
 
+	const stored = await factsJson(db, id);
+
 	setEvent('created', writer, id, {
 		published: publishedAt !== null,
-		...deckShape(cards),
+		...deckShape(stored),
 	});
 
-	return createdWrapped(c, {
-		set: {
-			...toSetJson(row, cards.length, writer.userId),
-			cards: (await listCards(db, id)).map(toCardJson),
-		},
-	});
+	return createdWrapped(c, { set: toSetDetailJson(row, stored, writer.userId) });
 });
 
 // ============================================================================
@@ -354,9 +457,9 @@ const getSetRoute = createRoute({
 	method: 'get',
 	path: '/sets/{id}',
 	tags: ['Sets'],
-	summary: 'Get a set and all of its cards',
+	summary: 'Get a set and all of its facts',
 	description:
-		'Returns the whole set in one response so the drill loop never needs a round trip between cards, and so a set can be exported as one file. Public when the set is published; otherwise owner-only.',
+		'Returns the whole set in one response — every fact, each already expanded into the questions it can be asked as — so a game never needs a round trip mid-play and a set can be exported as one file. Public when the set is published; otherwise owner-only.',
 	security: OPTIONAL_AUTH,
 	request: { params: z.object({ id: z.string() }) },
 	responses: {
@@ -379,10 +482,8 @@ app.openapi(getSetRoute, async (c) => {
 	const row = await loadSetForRead(db, id, viewerId);
 	if (!row) return notFoundWrapped(c, 'Set');
 
-	const cards = await listCards(db, id);
-	return okWrapped(c, {
-		set: { ...toSetJson(row, cards.length, viewerId), cards: cards.map(toCardJson) },
-	});
+	const facts = await factsJson(db, id);
+	return okWrapped(c, { set: toSetDetailJson(row, facts, viewerId) });
 });
 
 // ============================================================================
@@ -395,7 +496,7 @@ const updateSetRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Update a set',
 	description:
-		'Owner only, and a PARTIAL update — omitted fields are left alone, and cards are untouched. To write a whole set back from a file, use PUT instead. `published` is a per-set flag, not a separate copy: flipping it changes who may read the same rows.',
+		'Owner only, and a PARTIAL update — omitted fields are left alone, and facts are untouched. To write a whole set back from a file, use PUT instead. `published` is a per-set flag, not a separate copy: flipping it changes who may read the same rows.',
 	security: AUTHENTICATED,
 	request: {
 		params: z.object({ id: z.string() }),
@@ -439,7 +540,7 @@ app.openapi(updateSetRoute, async (c) => {
 		.run();
 
 	const count = await db
-		.prepare(`SELECT COUNT(*) AS n FROM cards WHERE set_id = ?1`)
+		.prepare(`SELECT COUNT(*) AS n FROM facts WHERE set_id = ?1`)
 		.bind(id)
 		.first<{ n: number }>();
 
@@ -449,7 +550,7 @@ app.openapi(updateSetRoute, async (c) => {
 	setEvent('updated', writer, id, {
 		published: publishedAt !== null,
 		visibilityChanged: (row.published_at !== null) !== (publishedAt !== null),
-		cards: count?.n ?? 0,
+		facts: count?.n ?? 0,
 	});
 
 	return okWrapped(c, {
@@ -471,7 +572,7 @@ const replaceSetRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Replace a whole set',
 	description:
-		'Owner only. The read half of the single-file format written back over an existing set: title, description and every card in ONE request, so a file that was exported, edited and re-imported does not need a PATCH and a card PUT to be sequenced by the caller. Metadata and cards land in a single transaction. Omitting `published` leaves visibility alone — a file describes content, and must not be able to silently unshare a set.',
+		'Owner only. The single-file format written back over an existing set: title, description and every fact in ONE request and ONE transaction. Send each fact back with the `id` it was exported with — an id that already belongs to this set is kept, which is what preserves the ratings hanging off it; anything else is minted fresh. Omitting `published` leaves visibility alone: a file describes content, and must not be able to silently unshare a set.',
 	security: AUTHENTICATED,
 	request: {
 		params: z.object({ id: z.string() }),
@@ -508,13 +609,17 @@ app.openapi(replaceSetRoute, async (c) => {
 	const now = Date.now();
 	const description = input.description ?? null;
 	const publishedAt = nextPublishedAt(row.published_at, input.published, now);
+	// Read BEFORE the swap: this is what lets a fact keep its id, and with it
+	// every rating hanging off that id.
+	const priorIds = await existingFactIds(db, id);
+	const ids = resolveFactIds(input.facts, priorIds);
 
 	// One batch, so a set can never be left holding the new title and the old
-	// deck. D1 wraps a batch in an implicit transaction; two awaited writes
+	// content. D1 wraps a batch in an implicit transaction; two awaited writes
 	// would not be, and the window between them is exactly where an import of
-	// someone's 500-card set would tear.
+	// someone's 500-fact set would tear.
 	await db.batch([
-		...cardReplacementStatements(db, id, input.cards),
+		...factReplacementStatements(db, id, input.facts, ids),
 		db
 			.prepare(
 				`UPDATE sets SET title = ?1, description = ?2, published_at = ?3, updated_at = ?4 WHERE id = ?5`
@@ -522,20 +627,23 @@ app.openapi(replaceSetRoute, async (c) => {
 			.bind(input.title, description, publishedAt, now, id),
 	]);
 
+	const stored = await factsJson(db, id);
+
 	setEvent('replaced', writer, id, {
 		published: publishedAt !== null,
-		...deckShape(input.cards),
+		// How much of the set kept its identity. A save that re-mints every id
+		// has thrown away a set's whole rating history, and this is the only
+		// place that would show it.
+		keptIds: ids.filter((factId) => priorIds.has(factId)).length,
+		...deckShape(stored),
 	});
 
 	return okWrapped(c, {
-		set: {
-			...toSetJson(
-				{ ...row, title: input.title, description, published_at: publishedAt, updated_at: now },
-				input.cards.length,
-				writer.userId
-			),
-			cards: (await listCards(db, id)).map(toCardJson),
-		},
+		set: toSetDetailJson(
+			{ ...row, title: input.title, description, published_at: publishedAt, updated_at: now },
+			stored,
+			writer.userId
+		),
 	});
 });
 
@@ -548,7 +656,8 @@ const deleteSetRoute = createRoute({
 	path: '/sets/{id}',
 	tags: ['Sets'],
 	summary: 'Delete a set',
-	description: 'Owner only. Cards and every reader’s saved progress go with it.',
+	description:
+		'Owner only. Facts, ratings, attempt history and every reader’s saved progress go with it.',
 	security: AUTHENTICATED,
 	request: { params: z.object({ id: z.string() }) },
 	responses: {
@@ -580,9 +689,24 @@ app.openapi(deleteSetRoute, async (c) => {
 
 	// Explicit, not left to ON DELETE CASCADE: D1 only enforces foreign keys
 	// when the connection has them enabled, and a silently-skipped cascade
-	// would strand cards and progress rows for a set that no longer exists.
+	// would strand rows for a set that no longer exists.
+	//
+	// Ratings key on `fact_id`, so they have to go BEFORE the facts they name —
+	// once the facts are gone there is nothing left to select them by, and the
+	// rows would be unreachable rather than merely orphaned.
 	await db.batch([
-		db.prepare(`DELETE FROM cards WHERE set_id = ?1`).bind(id),
+		db
+			.prepare(
+				`DELETE FROM variant_ratings WHERE fact_id IN (SELECT id FROM facts WHERE set_id = ?1)`
+			)
+			.bind(id),
+		db
+			.prepare(
+				`DELETE FROM user_variant_ratings WHERE fact_id IN (SELECT id FROM facts WHERE set_id = ?1)`
+			)
+			.bind(id),
+		db.prepare(`DELETE FROM attempts WHERE set_id = ?1`).bind(id),
+		db.prepare(`DELETE FROM facts WHERE set_id = ?1`).bind(id),
 		db.prepare(`DELETE FROM set_progress WHERE set_id = ?1`).bind(id),
 		db.prepare(`DELETE FROM sets WHERE id = ?1`).bind(id),
 	]);
@@ -590,61 +714,6 @@ app.openapi(deleteSetRoute, async (c) => {
 	setEvent('deleted', writer, id, { published: row.published_at !== null });
 
 	return okWrapped(c, { setId: id });
-});
-
-// ============================================================================
-// PUT /sets/:id/cards — replace the whole deck
-// ============================================================================
-
-const replaceCardsRoute = createRoute({
-	method: 'put',
-	path: '/sets/{id}/cards',
-	tags: ['Cards'],
-	summary: 'Replace every card in a set',
-	description:
-		'Owner only. The editor holds the whole set already, so cards are written wholesale rather than patched one at a time.',
-	security: AUTHENTICATED,
-	request: {
-		params: z.object({ id: z.string() }),
-		body: { content: { 'application/json': { schema: ReplaceCardsInputSchema } }, required: true },
-	},
-	responses: {
-		200: {
-			description: 'Cards replaced',
-			content: { 'application/json': { schema: CardsResponseSchema } },
-		},
-		400: {
-			description: 'Too many cards',
-			content: { 'application/json': { schema: ErrorResponseSchema } },
-		},
-		403: {
-			description: 'Not signed in, or below friend tier',
-			content: { 'application/json': { schema: ErrorResponseSchema } },
-		},
-		404: {
-			description: 'No such set — or not yours',
-			content: { 'application/json': { schema: ErrorResponseSchema } },
-		},
-	},
-});
-
-app.openapi(replaceCardsRoute, async (c) => {
-	const writer = resolveWriter(c);
-	if (!writer.ok)
-		return c.json({ success: false, error: 'Forbidden', message: writer.message }, 403);
-
-	const { id } = c.req.valid('param');
-	const { cards } = c.req.valid('json');
-	const db = c.env.STUDY_DB;
-
-	const row = await loadSetForWrite(db, id, writer.userId);
-	if (!row) return notFoundWrapped(c, 'Set');
-
-	await replaceCardsBatch(db, id, cards, Date.now());
-
-	setEvent('cards-replaced', writer, id, deckShape(cards));
-
-	return okWrapped(c, { cards: (await listCards(db, id)).map(toCardJson) });
 });
 
 export const setRoutes = app;

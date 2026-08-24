@@ -27,7 +27,7 @@ export interface AppEnv {
 	// ============================================================================
 
 	/**
-	 * D1 binding — sets, cards and per-user resume bookmarks.
+	 * D1 binding — sets, facts, ratings, attempts and resume bookmarks.
 	 *
 	 * REQUIRED, and deliberately not optional: every route below the health
 	 * check reads or writes it, so a deploy without the binding is broken, not
@@ -55,23 +55,40 @@ export interface SetRow {
 	updated_at: number;
 }
 
-export interface CardRow {
+/**
+ * A fact, as stored.
+ *
+ * `slots` and `questions` are JSON STRINGS here and objects nowhere below the
+ * handler edge — parsed once on read, serialized once on write, never touched
+ * raw in between.
+ *
+ * There is no `variants` column and no variants table. Variants are expanded
+ * on read by `expandFact`, because their keys are what ratings hang off: a
+ * stored copy would be a second answer to "what questions does this fact ask",
+ * free to disagree with the slots it was derived from the moment either is
+ * edited.
+ */
+export interface FactRow {
 	id: string;
 	set_id: string;
-	front: string;
-	back: string;
 	position: number;
+	/** JSON object, slot name -> value. Insertion order is the author's order,
+	 *  and is preserved through JSON.parse, so it is also display order. */
+	slots: string;
+	/** JSON array of question declarations, or NULL for "ask each slot in turn,
+	 *  giving all the others". */
+	questions: string | null;
 	/** The "why" shown after the answer — context, not the answer itself.
 	 *  A real column because every mode wants it. */
 	detail: string | null;
 	/**
-	 * Per-game attributes as a JSON STRING, keyed by game id — or NULL on an
-	 * ordinary flashcard. Parsed at the edge of the handler, never used raw.
+	 * Per-game attributes as a JSON STRING, keyed by game id — or NULL on a
+	 * fact no game has claimed.
 	 *
-	 * A set whose cards carry `attrs.board` can be played as a board; one that
-	 * does not is a plain deck. Board-ness is DERIVED from the cards rather
-	 * than flagged on the set, so a set cannot claim to be something its cards
-	 * are not.
+	 * Narrower than it was in v1: `difficulty` moved out to the variant's
+	 * `seedTier` in 0003, because a tier is a rating concept rather than a
+	 * board one. What stays here is genuinely board-specific, like a column
+	 * label.
 	 */
 	attrs: string | null;
 }

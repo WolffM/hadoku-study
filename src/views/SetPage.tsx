@@ -216,8 +216,17 @@ export function SetPage({
         {set.description && <p className="set-page__desc">{set.description}</p>}
         <p className="set-page__meta">
           <span>
-            {set.cardCount} {set.cardCount === 1 ? 'card' : 'cards'}
+            {set.factCount} {set.factCount === 1 ? 'fact' : 'facts'}
           </span>
+          {/* The number that decides how long a pass takes. A set of 25 facts
+              asked four ways is a hundred things to get right, and the fact
+              count alone hides that entirely. Shown only when it differs, so a
+              plain deck reads as a plain deck. */}
+          {set.variantCount !== set.factCount && (
+            <span>
+              {set.variantCount} {set.variantCount === 1 ? 'question' : 'questions'}
+            </span>
+          )}
           {set.isOwner && (
             <span className={`badge ${set.published ? 'badge--success' : 'badge--neutral'}`}>
               {set.published ? 'Published' : 'Private'}
@@ -269,7 +278,7 @@ export function SetPage({
           type="button"
           className="btn btn--quiet btn--sm"
           onClick={exportFile}
-          disabled={set.cards.length === 0}
+          disabled={set.facts.length === 0}
         >
           Export file
         </button>

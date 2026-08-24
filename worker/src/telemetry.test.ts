@@ -6,18 +6,33 @@
 import { describe, expect, it } from 'vitest';
 import { deckShape } from './telemetry.js';
 
-const plain = { attrs: null };
-const clue = { attrs: { board: { category: 'Places', difficulty: 1 } } };
+/** A migrated v1 card: two slots, one question, no game has claimed it. */
+const plain = { slots: { prompt: 'кот', answer: 'cat' }, variants: [{}], attrs: null };
+/** An authored fact: four slots asked three ways, sitting on a board. */
+const authored = {
+	slots: { who: 'Luther', what: 'refused to recant', where: 'Worms', when: '1521' },
+	variants: [{}, {}, {}],
+	attrs: { board: { category: 'Places' } },
+};
 
 describe('deckShape', () => {
-	it('counts a plain deck as having no clues and no games', () => {
-		expect(deckShape([plain, plain])).toEqual({ cards: 2, boardClues: 0, games: [] });
+	it('counts facts, the questions they make, and the slots behind them', () => {
+		expect(deckShape([plain, plain])).toEqual({
+			facts: 2,
+			variants: 2,
+			slots: 4,
+			games: [],
+		});
 	});
 
-	it('counts board clues separately from cards', () => {
-		expect(deckShape([clue, clue, plain])).toEqual({
-			cards: 3,
-			boardClues: 2,
+	it('separates facts from the questions they expand into', () => {
+		// The ratio is the whole point: a set imported straight off v1 sits at
+		// 1.0 until somebody adds slots to it, and the fact count alone cannot
+		// show that.
+		expect(deckShape([authored, plain])).toEqual({
+			facts: 2,
+			variants: 4,
+			slots: 6,
 			games: ['board'],
 		});
 	});
@@ -26,16 +41,23 @@ describe('deckShape', () => {
 		// The point of the attrs bag is that a game can exist before the server
 		// knows about it. The log should say so rather than reporting only the
 		// namespaces this build happens to recognise.
-		const shape = deckShape([clue, { attrs: { nameThatMap: { region: 'Maguuma' } } }]);
+		const shape = deckShape([
+			authored,
+			{ slots: { a: '1', b: '2' }, variants: [{}], attrs: { nameThatMap: { region: 'Maguuma' } } },
+		]);
 		expect(shape.games).toEqual(['board', 'nameThatMap']);
-		expect(shape.boardClues).toBe(1);
 	});
 
-	it('handles an empty deck', () => {
-		expect(deckShape([])).toEqual({ cards: 0, boardClues: 0, games: [] });
+	it('handles an empty set', () => {
+		expect(deckShape([])).toEqual({ facts: 0, variants: 0, slots: 0, games: [] });
 	});
 
-	it('treats a card with an empty bag as untagged', () => {
-		expect(deckShape([{ attrs: {} }])).toEqual({ cards: 1, boardClues: 0, games: [] });
+	it('treats a fact with an empty bag as unclaimed', () => {
+		expect(deckShape([{ slots: { a: '1', b: '2' }, variants: [{}], attrs: {} }])).toEqual({
+			facts: 1,
+			variants: 1,
+			slots: 2,
+			games: [],
+		});
 	});
 });

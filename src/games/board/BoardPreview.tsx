@@ -11,10 +11,11 @@
 
 import { useMemo } from 'react'
 import type { StudySetDetail } from '../../api/types'
+import { toPlayCards } from '../../model/playCards'
 import { TIERS, buildBoard } from './model'
 
 export function BoardPreview({ set }: { set: StudySetDetail }) {
-  const board = useMemo(() => buildBoard(set.cards), [set.cards])
+  const board = useMemo(() => buildBoard(toPlayCards(set.facts)), [set.facts])
 
   // Decorative: the tile's own label already carries the clue count and score
   // for anyone not looking at pictures.

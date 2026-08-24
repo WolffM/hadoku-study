@@ -115,7 +115,7 @@ function SetTile({
         {set.description && <span className="set-tile__desc">{set.description}</span>}
         <span className="set-tile__meta">
           <span>
-            {set.cardCount} {set.cardCount === 1 ? 'card' : 'cards'}
+            {set.factCount} {set.factCount === 1 ? 'fact' : 'facts'}
           </span>
           {showVisibility && (
             <span className={`badge ${set.published ? 'badge--success' : 'badge--neutral'}`}>

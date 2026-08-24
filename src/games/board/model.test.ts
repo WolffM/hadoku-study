@@ -6,16 +6,14 @@
 
 import { describe, expect, it } from 'vitest'
 import { buildBoard, isPlayable, missingForBoard, pointsFor, readBoardAttrs } from './model'
-import type { StudyCard, StudySetDetail } from '../../api/types'
+import { toPlayCards } from '../../model/playCards'
+import { authored, clue, detailSet, fact, flashcard } from '../../testing/fixtures'
 
-const card = (over: Partial<StudyCard> & { id: string }): StudyCard => ({
-  front: 'front',
-  back: 'back',
-  ...over
-})
+/** The questions a set holds, which is what the board actually places. */
+const cardsOf = (facts: Parameters<typeof detailSet>[0]) => toPlayCards(facts)
 
-const clue = (id: string, category: string, difficulty: number) =>
-  card({ id, attrs: { board: { category, difficulty } } })
+const clueCards = (...specs: [string, string, number][]) =>
+  cardsOf(specs.map(([id, category, tier]) => clue(id, category, tier)))
 
 describe('points', () => {
   it('map a tier to a board value', () => {
@@ -23,126 +21,108 @@ describe('points', () => {
   })
 })
 
-describe("reading this game's namespace off a card", () => {
-  const attrs = (board: unknown) => readBoardAttrs(card({ id: 'a', attrs: { board } }))
-
-  it('accepts a fully tagged card', () => {
-    expect(readBoardAttrs(clue('a', 'Places', 1))).toEqual({ category: 'Places', difficulty: 1 })
+describe("reading this game's namespace off a question", () => {
+  it('accepts a fact carrying a category', () => {
+    expect(readBoardAttrs(clueCards(['a', 'Places', 1])[0])).toEqual({ category: 'Places' })
   })
 
   it('ignores a plain flashcard', () => {
-    expect(readBoardAttrs(card({ id: 'a' }))).toBeNull()
+    expect(readBoardAttrs(cardsOf([flashcard('a')])[0])).toBeNull()
   })
 
-  it('ignores a card whose attrs hold only other games', () => {
-    expect(readBoardAttrs(card({ id: 'a', attrs: { nameThatMap: { region: 'x' } } }))).toBeNull()
+  it('ignores a fact whose attrs hold only other games', () => {
+    const cards = cardsOf([fact({ id: 'a', attrs: { nameThatMap: { region: 'x' } } })])
+    expect(readBoardAttrs(cards[0])).toBeNull()
   })
 
-  it('rejects a half-tagged namespace either way round', () => {
-    expect(attrs({ category: 'Places' })).toBeNull()
-    expect(attrs({ difficulty: 3 })).toBeNull()
+  it('ignores a blank category rather than making a nameless column', () => {
+    const cards = cardsOf([fact({ id: 'a', attrs: { board: { category: '  ' } } })])
+    expect(readBoardAttrs(cards[0])).toBeNull()
   })
 
-  it('rejects a blank category, which would render a nameless column', () => {
-    expect(attrs({ category: '   ', difficulty: 2 })).toBeNull()
-  })
-
-  it('rejects a tier off the board', () => {
-    expect(attrs({ category: 'Places', difficulty: 0 })).toBeNull()
-    expect(attrs({ category: 'Places', difficulty: 6 })).toBeNull()
-    expect(attrs({ category: 'Places', difficulty: 2.5 })).toBeNull()
-  })
-
-  it('survives a namespace of the wrong shape entirely', () => {
-    // The bag passes unknown namespaces through unvalidated, so `board` may be
-    // anything at all by the time it gets here. A card that cannot be read is
-    // simply not a clue — it must not take the board down.
-    for (const junk of ['nonsense', 42, null, [], { category: 5, difficulty: 'x' }]) {
-      expect(attrs(junk)).toBeNull()
-    }
+  it('no longer reads a tier from here — that moved to the question', () => {
+    // 0003 moved `difficulty` out to `seedTier`, because a tier seeds a rating
+    // and ratings belong to every mode, not to this one.
+    const cards = cardsOf([fact({ id: 'a', attrs: { board: { category: 'P' } } })])
+    expect(readBoardAttrs(cards[0])).toEqual({ category: 'P' })
   })
 })
 
 describe('building the grid', () => {
-  it('keeps categories in author order, not alphabetical', () => {
-    const board = buildBoard([clue('a', 'Zeta', 1), clue('b', 'Alpha', 1)])
-    expect(board.categories).toEqual(['Zeta', 'Alpha'])
-  })
-
-  it('scores the board from the tiers actually present', () => {
-    const board = buildBoard([clue('a', 'X', 1), clue('b', 'X', 5)])
+  it('places each question at its category and its seed tier', () => {
+    const board = buildBoard(clueCards(['a', 'Places', 1], ['b', 'People', 3]))
+    expect(board.categories).toEqual(['Places', 'People'])
+    expect(board.cells.get('Places')?.get(1)?.card.factId).toBe('a')
+    expect(board.cells.get('People')?.get(3)?.card.factId).toBe('b')
     expect(board.clueCount).toBe(2)
-    expect(board.maxScore).toBe(600)
+    expect(board.maxScore).toBe(400)
   })
 
-  it('leaves untagged cards off the grid but keeps them in the deck', () => {
-    const board = buildBoard([clue('a', 'X', 1), card({ id: 'b' })])
+  it('orders columns by first appearance, which is the author’s order', () => {
+    const board = buildBoard(clueCards(['a', 'Zebra', 1], ['b', 'Apple', 2]))
+    expect(board.categories).toEqual(['Zebra', 'Apple'])
+  })
+
+  it('leaves an untagged question off the grid but still in the deck', () => {
+    const board = buildBoard(cardsOf([clue('a', 'Places', 1), flashcard('b')]))
     expect(board.clueCount).toBe(1)
-    expect(board.unplaced.map(c => c.id)).toEqual(['b'])
+    expect(board.unplaced.map(c => c.factId)).toEqual(['b'])
   })
 
-  it('tolerates a board with holes', () => {
-    const board = buildBoard([clue('a', 'X', 1), clue('b', 'X', 4)])
-    expect(board.cells.get('X')?.get(1)?.card.id).toBe('a')
-    expect(board.cells.get('X')?.get(2)).toBeUndefined()
-    expect(board.cells.get('X')?.get(4)?.card.id).toBe('b')
+  it('keeps the first of two questions contesting one cell', () => {
+    // Common in v2: a fact asked four ways puts four questions in one category
+    // at one tier, and exactly one belongs on the grid. Letting the last win
+    // would make the board depend on question order in a way nobody can see.
+    const board = buildBoard(clueCards(['a', 'Places', 1], ['b', 'Places', 1]))
+    expect(board.cells.get('Places')?.get(1)?.card.factId).toBe('a')
+    expect(board.unplaced.map(c => c.factId)).toEqual(['b'])
+    expect(board.clueCount).toBe(1)
   })
 
-  it('gives a contested cell to the first clue and demotes the rest', () => {
-    // Two clues at one category and tier is an authoring mistake with no right
-    // answer. Silently showing the last would make the board depend on card
-    // order in a way nobody can see.
-    const board = buildBoard([clue('a', 'X', 1), clue('b', 'X', 1)])
-    expect(board.cells.get('X')?.get(1)?.card.id).toBe('a')
-    expect(board.unplaced.map(c => c.id)).toEqual(['b'])
-    expect(board.maxScore).toBe(100)
+  it('refuses a tier outside the five rungs the grid has', () => {
+    const cards = cardsOf([
+      {
+        ...clue('a', 'Places', 1),
+        variants: [{ ...clue('a', 'Places', 1).variants[0], seedTier: 9 }]
+      }
+    ])
+    expect(buildBoard(cards).clueCount).toBe(0)
   })
 
-  it('treats categories differing only by surrounding space as one column', () => {
-    const board = buildBoard([clue('a', 'Places', 1), clue('b', '  Places  ', 2)])
-    expect(board.categories).toEqual(['Places'])
-    expect(board.cells.get('Places')?.size).toBe(2)
-  })
-})
-
-describe('playability', () => {
-  const set = (cards: StudyCard[]): StudySetDetail => ({
-    id: 's',
-    title: 'T',
-    description: null,
-    published: false,
-    cardCount: cards.length,
-    isOwner: true,
-    createdAt: 'x',
-    updatedAt: 'x',
-    cards
-  })
-
-  it('offers a board as soon as one clue qualifies', () => {
-    expect(isPlayable(set([clue('a', 'X', 1), card({ id: 'b' })]))).toBe(true)
-  })
-
-  it('does not offer a board for a plain deck', () => {
-    expect(isPlayable(set([card({ id: 'a' }), card({ id: 'b' })]))).toBe(false)
+  it('places every question a multi-slot fact produces', () => {
+    // Each is a separate thing to get right, so each competes for its own cell.
+    const board = buildBoard(cardsOf([authored('a', 'Places')]))
+    expect(board.clueCount).toBe(2)
+    expect(board.cells.get('Places')?.get(2)).toBeDefined()
+    expect(board.cells.get('Places')?.get(4)).toBeDefined()
   })
 })
 
-describe('what is still missing', () => {
-  it('says so when there is nothing to tag', () => {
-    expect(missingForBoard([])).toMatch(/add some cards/i)
+describe('whether to offer the game at all', () => {
+  it('says yes once one question qualifies', () => {
+    expect(isPlayable(cardsOf([flashcard('a'), clue('b', 'Places', 1)]))).toBe(true)
   })
 
-  it('explains the whole deck is untagged', () => {
-    expect(missingForBoard([card({ id: 'a' })])).toMatch(/category and a tier/i)
+  it('says no for a plain deck', () => {
+    expect(isPlayable(cardsOf([flashcard('a')]))).toBe(false)
+  })
+})
+
+describe('telling the author what is missing', () => {
+  it('says nothing when the whole set is tagged', () => {
+    expect(missingForBoard(clueCards(['a', 'Places', 1]))).toBeNull()
   })
 
-  it('counts progress on a half-tagged deck', () => {
-    const msg = missingForBoard([clue('a', 'X', 1), card({ id: 'b' }), card({ id: 'c' })])
-    expect(msg).toContain('1 of 3')
-    expect(msg).toContain('other 2')
+  it('asks for content before anything else', () => {
+    expect(missingForBoard([])).toContain('facts')
   })
 
-  it('is silent once every card is on the board', () => {
-    expect(missingForBoard([clue('a', 'X', 1)])).toBeNull()
+  it('asks for a category when nothing is tagged', () => {
+    expect(missingForBoard(cardsOf([flashcard('a')]))).toContain('category')
+  })
+
+  it('counts progress on a half-tagged set', () => {
+    const message = missingForBoard(cardsOf([clue('a', 'Places', 1), flashcard('b')]))
+    expect(message).toContain('1 of 2')
   })
 })

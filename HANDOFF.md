@@ -26,11 +26,12 @@ a string union is not a migration; dropping a boolean column is.
 
 ## The value is in the drill loop
 
-The data model is trivial on purpose. Almost all of the work is in the loop
-feeling fast on a phone, and the following are load-bearing, not decoration:
+Almost all of the work is in the loop feeling fast on a phone, and the
+following are load-bearing, not decoration:
 
 - **The whole set is prefetched on entry.** `GET /study/api/sets/:id` returns
-  every card, so nothing touches the network between flips.
+  every fact, already expanded into every question it can be asked as, so
+  nothing touches the network between flips.
 - **Both card faces share one CSS grid cell**, so the card is as tall as its
   taller face _before_ you flip it. Sizing to the visible face would jump the
   grade buttons out from under a thumb already moving toward them.
@@ -41,8 +42,8 @@ feeling fast on a phone, and the following are load-bearing, not decoration:
 - **Swipe right/left grades, tap flips**; `touch-action: pan-y` leaves vertical
   scrolling to the browser so a drag never fights the page. Keyboard: space
   flips, arrows grade, escape leaves.
-- Results record the **first** outcome per card, so "23 of 40 on the first try"
-  means something.
+- Results record the **first** outcome per question, so "23 of 40 on the first
+  try" means something.
 
 ## Architecture
 
@@ -98,6 +99,76 @@ a shared set require an account.
 Progress is gated on **identity, not tier**: it is private data about a set the
 caller can already read. Signed-out readers keep their place on the device.
 
+## A fact is the unit of storage, not a question
+
+A v1 card fused two things a study set actually has: **the thing that is true**,
+and **the question you ask about it**. One row was both — which is why a set
+could not ask "who met Charles V at Worms in 1521?" and "in what year did
+Luther meet Charles V at Worms?" without storing Worms and 1521 twice, and why
+there was nowhere to hang a rating that meant anything: a rating on a
+front/back pair cannot say that the year is harder to recall than the place.
+
+0003 splits them.
+
+- **`facts.slots`** is a JSON object of named values — what is true.
+  `{"who": "...", "what": "...", "where": "Worms", "when": "1521"}`.
+- **`facts.questions`** is a JSON array of declarations: which slot is the
+  ANSWER (`ask`), which are shown (`given`, defaulting to all the others), and
+  how it reads (`prompt`).
+- **A variant** is one resolved question. `factId:variantKey` is its id.
+- **Front and back are a RENDER**, not a shape anything is stored in.
+
+Two consequences that pay for the whole change: dropping givens is a difficulty
+ladder nobody has to declare (`when<what,where,who>` and `when<where>` are
+different keys and rate independently), and "never ask two questions about the
+same fact on one board" stops being a rule anyone enforces — it is one claim
+per fact, in one line.
+
+### Variants are derived in the worker, on read, and nowhere else
+
+There is no variants table and no shared client copy of the expansion. A
+variant's key is what ratings hang off, and a key computed in two places is a
+key that eventually disagrees with itself — silently, no error, splitting one
+question's history into two rows that never converge. `expandFact` in
+`worker/src/variants.ts` is the only implementation; the client renders what
+the API hands it and builds no keys of its own.
+
+The response carries **both** `questions` (as authored) and `variants` (as
+resolved). Only the first is content. Exporting from `variants` alone would
+bake this build's fallback phrasings in as though a person had written them, so
+every round trip would quietly freeze a template into the set.
+
+`expandFact` is deliberately tolerant: a declaration whose `ask` slot was
+renamed is skipped, and a `given` naming a missing slot just loses that entry.
+A fact rendering fewer questions beats one rendering none.
+
+### A fact keeps its id across a save, or its ratings die
+
+Saving replaces a set's facts **wholesale** — one DELETE, then INSERTs. In v1
+that was free, because nothing outside the set referred to a card by id. It is
+not free now: ratings and attempts hang off `fact_id`, so re-minting ids on
+every save would discard a set's entire play history each time its owner fixed
+a typo. Not wrong — **gone**, with no error anywhere.
+
+So an exported file carries each fact's `id`, and `resolveFactIds` hands it
+back when it already belongs to that set. An id from another set is refused
+(otherwise a hand-edited file could adopt someone else's history) and a
+duplicate within one payload is re-minted. `sets.factIds.test.ts` is the only
+thing standing between "fixed a typo" and "lost a month of data".
+
+Slot names are restricted to `[A-Za-z0-9_-]` for the same family of reason: a
+key is `ask<given,given>`, so a slot name containing a comma or an angle
+bracket would produce a key that reads back as a different question.
+
+### What the editor will and will not touch
+
+The row editor represents a **two-slot flashcard** and nothing else. A fact
+with four slots asked three ways is shown read-only and passed through byte for
+byte, because flattening one to fit two text inputs would destroy authoring
+silently, on save, in exactly the sets that had the most work in them. Editing
+rich facts properly is Phase 3; until then the file is their editor, which
+works because the export is the import.
+
 ## A set is one file, and that is load-bearing
 
 Sets move between the app, a script and an agent as a single JSON document, and
@@ -145,21 +216,28 @@ A game's `id` is three things at once, deliberately: its key in a card's
 `attrs` bag, its value in the `?play=` URL param, and its identity in the
 registry. One name means there is nowhere for the three to drift apart.
 
-### Cards carry a bag, not a column per game
+### Facts carry a bag, not a column per game
 
-`cards` has two columns for this, doing different jobs:
+`facts` has two columns for this, doing different jobs:
 
 - **`detail`** is a real column because it is CROSS-CUTTING — an explanation
   after the answer is wanted by the drill, the board, and every quiz mode
   sketched so far. A field every mode uses belongs in the schema, typed and in
   the spec, not buried in a bag.
-- **`attrs`** is a JSON object NAMESPACED BY GAME:
-  `{"board": {"category": "Places", "difficulty": 3}}`. A new game adds a key
-  rather than a column.
+- **`attrs`** is a JSON object NAMESPACED BY GAME: `{"board": {"category":
+"Places"}}`. A new game adds a key rather than a column.
 
-The namespace is the point. Two games that both want `difficulty` would
-collide in a flat bag, and resolving that later is exactly the migration this
-column exists to avoid.
+The namespace is the point. Two games that both want `category` would collide
+in a flat bag, and resolving that later is exactly the migration this column
+exists to avoid.
+
+`difficulty` used to live in the board namespace and **moved out** in 0003, to
+the question's `seedTier`. The line is worth learning: a tier seeds a RATING,
+and ratings belong to every mode, so it was never board-specific. A column
+label genuinely is. When something in a game's namespace turns out to be wanted
+by every game, it belongs in the schema — and `BoardAttrsSchema` is `strict`
+precisely so a file still carrying the old `difficulty` fails loudly instead of
+importing cleanly with every board tier silently gone.
 
 Known namespaces are still **fully typed** in zod and published in the spec, so
 an agent generating a board reads a real schema rather than an opaque object.
@@ -167,11 +245,11 @@ Unknown namespaces **round-trip untouched** — through the API, the file format
 and the editor — so a game can be prototyped entirely in the client before the
 server knows it exists. Three consequences worth keeping:
 
-- The editor preserves other games' namespaces when it saves. Editing a card in
+- The editor preserves other games' namespaces when it saves. Editing a fact in
   one mode must not quietly delete another mode's data.
 - Each game reads its own namespace through its own reader and validates as it
   goes, because the bag passes anything through: a `board` key may be any shape
-  at all by the time it reaches the client. A card that cannot be read is
+  at all by the time it reaches the client. A question that cannot be read is
   simply not a clue, and must never take the board down.
 - `attrs` is size-capped in the schema (`MAX_ATTRS_LENGTH`). Passing unknown
   keys through unvalidated is what makes a cap necessary — without one the
@@ -179,17 +257,18 @@ server knows it exists. Three consequences worth keeping:
 
 ### Playability is derived, never stored
 
-A set whose cards carry `attrs.board` can be played as a board; one whose cards
+A set whose facts carry `attrs.board` can be played as a board; one whose facts
 do not is a plain deck. There is no `mode` column on `sets`, because that would
-be a second answer to a question the cards already answer, free to drift out of
-step with them. A deck that gets tagged later starts qualifying on its own,
+be a second answer to a question the content already answers, free to drift out
+of step with it. A deck that gets tagged later starts qualifying on its own,
 with no migration and no flag to keep in sync.
 
 The asymmetry runs one way and is deliberate: **every board is already a deck**,
-because a clue is a card with a front and a back. A deck becomes a board only
-once someone has done the authoring. Half-tagged sets are therefore a normal
-in-between state — untagged cards stay in the deck, sit off the grid, and the
-editor reports what is still missing rather than enforcing a silent threshold.
+because a clue is a question with an answer. A deck becomes a board only once
+someone has done the authoring. Half-tagged sets are therefore a normal
+in-between state — untagged questions stay in the deck, sit off the grid, and
+the editor reports what is still missing rather than enforcing a silent
+threshold.
 
 ### The board is built phone-first
 

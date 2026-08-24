@@ -53,7 +53,7 @@ const openApiDocConfig = createOpenAPIDocConfig({
 	title: 'Study API',
 	version: '1.0.0',
 	description: `
-Flashcard sets you create and drill.
+Study sets you create, drill and play.
 
 ## Visibility
 A set is owned by a user and private by default. Publishing is a per-set flag —
@@ -72,8 +72,47 @@ never to the key, because a key can rotate and the userId does not.
 - **Progress**: gated on identity rather than tier — it is private data about a
   set the caller can already read. Signed-out readers keep progress on-device.
 
+## Facts, not cards
+A set holds FACTS. A fact is a bundle of named slots — what is true — and the
+API expands each one into the QUESTIONS you can ask of it:
+
+\`\`\`json
+{
+  "slots": {
+    "who":   "Martin Luther and Emperor Charles V",
+    "what":  "Luther refused to recant his writings",
+    "where": "the Diet of Worms",
+    "when":  "1521"
+  },
+  "detail": "“Here I stand” is almost certainly a later embellishment.",
+  "questions": [
+    { "ask": "when",  "seedTier": 1,
+      "prompt": "What year did Luther refuse to recant before Charles V?" },
+    { "ask": "who",   "seedTier": 3, "given": ["what", "where", "when"] }
+  ]
+}
+\`\`\`
+
+- **\`ask\`** names the slot that is the ANSWER. Everything else is context.
+- **\`given\`** omitted means every other slot. Naming FEWER is how one fact
+  yields a harder question — and the two rate independently, because the given
+  set is part of the question's identity.
+- **\`prompt\`** is how the question reads. Write one. The fallback phrasings are
+  deliberately plain, and a set that leans on them sounds like a form.
+- **\`questions\`** omitted means "ask each slot in turn, giving all the others".
+- **\`seedTier\`** (1–5) only SEEDS difficulty. It is not a score, and play moves
+  it from there.
+
+\`who\` / \`what\` / \`where\` / \`when\` / \`why\` / \`how\` / \`quote\` / \`term\` /
+\`definition\` are phrased automatically when no prompt is written; \`why\`, \`how\`
+and \`definition\` are treated as answers you explain rather than name. Any other
+slot name works and simply needs a \`prompt\`.
+
+Responses carry a \`variants\` array per fact, each with a stable \`key\`. Those
+keys are derived here and only here, so read them rather than building them.
+
 ## A set is a single file
-\`GET /sets/{id}\` returns the whole set, cards included, and unknown fields are
+\`GET /sets/{id}\` returns the whole set, facts included, and unknown fields are
 stripped on the way back in — so the exported object is a valid import body
 with no editing. The round trip is three commands:
 
@@ -86,15 +125,20 @@ curl -sH "X-User-Key: $KEY" https://hadoku.me/study/api/sets/$ID \\
 curl -sH "X-User-Key: $KEY" -H 'Content-Type: application/json' \\
   --json @set.json https://hadoku.me/study/api/sets
 
-# write an edited file back over the SAME set — metadata and cards, one call
+# write an edited file back over the SAME set — metadata and facts, one call
 curl -sX PUT -H "X-User-Key: $KEY" -H 'Content-Type: application/json' \\
   --json @set.json https://hadoku.me/study/api/sets/$ID
 \`\`\`
 
-Only \`title\` and \`cards\` are required; \`description\` and \`published\` are
+Only \`title\` and \`facts\` are required; \`description\` and \`published\` are
 optional. On PUT, an omitted \`published\` leaves visibility ALONE — a file
 describes a set's content, so one that never mentions publication must not be
 able to silently unshare it.
+
+**Send each fact back with the \`id\` it was exported with.** An id that already
+belongs to the set is kept, and every rating and attempt hanging off it
+survives the save; anything else is minted fresh. Dropping the ids is how you
+silently discard a set's play history.
 		`,
 	// The origin ONLY. Every path in this document already carries the
 	// /study/api prefix the worker mounts on, so a server URL that
@@ -104,8 +148,7 @@ able to silently unshare it.
 	production: 'https://hadoku.me',
 	tags: [
 		{ name: 'Health', description: 'Health check endpoints' },
-		{ name: 'Sets', description: 'Flashcard set CRUD and publishing' },
-		{ name: 'Cards', description: 'The cards inside a set' },
+		{ name: 'Sets', description: 'Set CRUD and publishing' },
 		{ name: 'Progress', description: 'Where a reader left off in a set' },
 	],
 });
@@ -235,5 +278,5 @@ export function createOpenAPIDocument(): OpenAPIDocument {
 	return createApp().getOpenAPIDocument(openApiDocConfig) as unknown as OpenAPIDocument;
 }
 
-export type { AppEnv, CardRow, ProgressRow, SetRow } from './types.js';
+export type { AppEnv, FactRow, ProgressRow, SetRow } from './types.js';
 export * from './schemas.js';

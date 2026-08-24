@@ -11,19 +11,22 @@
  */
 
 import { z } from 'zod'
-import type { CardResult, StoredProgress, StudyCard } from '../api/types'
+import type { CardResult, StoredProgress } from '../api/types'
+import type { PlayCard } from '../model/playCards'
 
 export interface DrillState {
   setId: string
-  /** Card ids still to show, in order. A missed card appears again at the back. */
+  /** Question ids still to show, in order — `factId:variantKey`, not fact ids.
+   *  A missed question appears again at the back. */
   queue: string[]
   /**
-   * FIRST outcome per card, and it never changes afterwards.
+   * FIRST outcome per question, and it never changes afterwards.
    *
    * Recording the first attempt rather than the last is what makes the summary
-   * mean something: a card you missed and then got on the retry did not become
-   * a card you knew. It also makes the map a stable size — one entry per card
-   * — rather than something that rewrites itself as the queue recycles.
+   * mean something: a question you missed and then got on the retry did not
+   * become one you knew. It also makes the map a stable size — one entry per
+   * question — rather than something that rewrites itself as the queue
+   * recycles.
    */
   results: Record<string, CardResult>
   updatedAt: number
@@ -52,7 +55,7 @@ function shuffled<T>(items: T[]): T[] {
   return out
 }
 
-export function startDrill(setId: string, cards: StudyCard[], shuffle: boolean): DrillState {
+export function startDrill(setId: string, cards: PlayCard[], shuffle: boolean): DrillState {
   const ids = cards.map(c => c.id)
   return {
     setId,
@@ -77,7 +80,7 @@ export function grade(state: DrillState, result: CardResult): DrillState {
   const [, ...rest] = state.queue
   return {
     ...state,
-    // A missed card goes to the back of the pass, so it comes round again
+    // A missed question goes to the back of the pass, so it comes round again
     // before the pass can end — that IS the drill.
     queue: result === 'missed' ? [...rest, id] : rest,
     results: id in state.results ? state.results : { ...state.results, [id]: result },
@@ -90,7 +93,7 @@ export interface DrillSummary {
   missed: number
   graded: number
   total: number
-  /** Distinct cards still to come. A card queued twice counts once. */
+  /** Distinct questions still to come. One queued twice counts once. */
   remaining: number
 }
 
@@ -112,15 +115,21 @@ export function summarize(state: DrillState, total: number): DrillSummary {
 /**
  * Reconcile a restored bookmark against the set as it is NOW.
  *
- * The owner may have edited the set since — cards removed, cards added — and a
- * queue naming ids that no longer exist would show blanks. Anything unknown is
- * dropped from both the queue and the results; cards added since are appended
- * so they are not silently skipped.
+ * The owner may have edited the set since — facts removed, slots renamed, a
+ * question rephrased into a different key — and a queue naming ids that no
+ * longer exist would show blanks. Anything unknown is dropped from both the
+ * queue and the results; questions added since are appended so they are not
+ * silently skipped.
+ *
+ * This is also what carries a v1 bookmark across the v2 upgrade: every stored
+ * id was a bare card id, none of them match a `factId:variantKey`, so nothing
+ * survives and the reader starts a fresh pass. Degrading to "start over" is
+ * the designed behaviour for an unusable bookmark, not an accident.
  *
  * Returns null when nothing usable survives, which the caller reads as "no
  * bookmark" and starts a fresh pass.
  */
-export function reconcile(state: DrillState, cards: StudyCard[]): DrillState | null {
+export function reconcile(state: DrillState, cards: PlayCard[]): DrillState | null {
   const live = new Set(cards.map(c => c.id))
 
   const queue = state.queue.filter(id => live.has(id))

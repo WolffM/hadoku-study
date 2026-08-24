@@ -716,6 +716,57 @@
   }
 }
 
+/* A fact with more than a front and a back.
+ *
+ * Read-only on purpose: two text inputs cannot express four slots asked three
+ * ways, and flattening one to fit would destroy authoring silently, on save,
+ * in the sets that had the most work in them. Editing these properly is Phase
+ * 3; until then the file is their editor.
+ *
+ * Declared after the responsive `.editor__row` block above, so it wins at both
+ * widths on source order alone — one wide cell where an editable row has two,
+ * with no media query of its own to keep in step. */
+.editor__row--rich {
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: 'num rich remove';
+  align-items: start;
+}
+
+.editor__rich {
+  grid-area: rich;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-xs);
+  padding: var(--hdk-space-sm) var(--hdk-space-md);
+  background-color: var(--color-bg-alt);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--hdk-radius);
+  min-width: 0;
+}
+
+.editor__rich-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hdk-space-xs) var(--hdk-space-md);
+  margin: 0;
+  font-size: var(--hdk-text-sm);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.editor__rich-slot b {
+  font-size: var(--hdk-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin-right: var(--hdk-space-xs);
+}
+
+.editor__rich-note {
+  margin: 0;
+  font-size: var(--hdk-text-xs);
+}
+
 .editor__actions {
   display: flex;
   gap: var(--hdk-space-sm);
@@ -905,8 +956,12 @@
   grid-area: 1 / 1;
   backface-visibility: hidden;
   display: flex;
+  /* Column, so a question that shows context stacks it above the prompt. A
+     card with no context has one child and still centres, exactly as before. */
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: var(--hdk-space-md);
   padding: var(--hdk-space-xl);
   background-color: var(--color-bg-card);
   border: 1px solid var(--color-border);
@@ -932,6 +987,48 @@
   .flip-card__text {
     font-size: 1.75rem;
   }
+}
+
+/* What you are given, above what you are asked.
+ *
+ * Not decoration: a question that asks one slot and shows three is
+ * unanswerable without these. Set in the quieter of the two text tokens so the
+ * prompt still reads as the question — the context is the setup, not the ask.
+ * Empty on every migrated flashcard, whose prompt already IS the shown side,
+ * so nothing renders and those cards look exactly as they always did. */
+.flip-card__given {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-xs);
+  margin: 0;
+  width: 100%;
+  max-width: 28rem;
+}
+
+.flip-card__given-row,
+.board__given-row {
+  display: flex;
+  gap: var(--hdk-space-sm);
+  align-items: baseline;
+}
+
+.flip-card__given-slot,
+.board__given-slot {
+  flex: 0 0 auto;
+  min-width: 4.5rem;
+  font-size: var(--hdk-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.flip-card__given-value,
+.board__given-value {
+  margin: 0;
+  font-size: var(--hdk-text-sm);
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .flip-card__hint {
@@ -1165,6 +1262,15 @@
   /* A long clue scrolls inside the sheet rather than pushing the actions off
      the bottom of the viewport. */
   min-height: 0;
+}
+
+.board__given {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-xs);
+  margin: 0;
+  padding-bottom: var(--hdk-space-md);
+  border-bottom: 1px solid var(--color-border-light);
 }
 
 .board__clue {

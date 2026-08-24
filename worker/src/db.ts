@@ -2,26 +2,39 @@
  * D1 access helpers and the visibility rules every route shares.
  */
 
-import type { CardRow, ProgressRow, SetRow } from './types.js';
+import type { FactRow, ProgressRow, SetRow } from './types.js';
 
-/** Cards per set. A set is meant to be prefetched whole on entry. */
-export const MAX_CARDS_PER_SET = 500;
+/** Facts per set. A set is meant to be prefetched whole on entry. */
+export const MAX_FACTS_PER_SET = 500;
 export const MAX_FIELD_LENGTH = 2000;
 export const MAX_TITLE_LENGTH = 120;
-/** A board column label. Short because five of them share a phone's width. */
+/** A board column label. Short because four of them share a phone's width. */
 export const MAX_CATEGORY_LENGTH = 40;
-/** Board rows. Five tiers is what a Jeopardy board is; more would not fit a
- *  phone, and the value is a TIER rather than a score so points can be
- *  rescaled at render time. */
-export const MAX_DIFFICULTY = 5;
+
 /**
- * Serialized `cards.attrs`, in characters.
+ * Slots on one fact.
+ *
+ * Twelve is far past what anyone writes — a fact is a who/what/where/when and
+ * maybe a why — but the default expansion asks EVERY slot in turn, so this is
+ * also the cap on how many questions an undeclared fact can produce. Without
+ * it a hand-written file with fifty slots is a fifty-question fact nobody
+ * asked for.
+ */
+export const MAX_SLOTS_PER_FACT = 12;
+/** Declared questions on one fact. Generous next to the slot cap, since
+ *  dropping givens legitimately yields several questions per asked slot. */
+export const MAX_QUESTIONS_PER_FACT = 24;
+/** A slot name. Short: it is an identifier inside a variant key, not prose. */
+export const MAX_SLOT_NAME_LENGTH = 40;
+
+/**
+ * Serialized `facts.attrs`, in characters.
  *
  * The attrs bag passes unknown game namespaces through unvalidated so a new
  * mode needs no schema change. That flexibility is exactly what makes a cap
  * necessary: without one the column is an unbounded blob store that any
  * friend-tier caller can fill. Generous next to what a game actually needs —
- * the board uses about 50 characters — and still 500 cards' worth is under a
+ * the board uses about 50 characters — and still 500 facts' worth is under a
  * megabyte.
  */
 export const MAX_ATTRS_LENGTH = 2000;
@@ -63,7 +76,7 @@ export function userIdOf(req: Request): string | null {
 }
 
 export interface SetWithCount extends SetRow {
-	card_count: number;
+	fact_count: number;
 }
 
 /**
@@ -112,18 +125,18 @@ export async function loadSetForWrite(
 	return row ?? null;
 }
 
-export async function listCards(db: D1Database, setId: string): Promise<CardRow[]> {
+export async function listFacts(db: D1Database, setId: string): Promise<FactRow[]> {
 	const res = await db
-		.prepare(`SELECT * FROM cards WHERE set_id = ?1 ORDER BY position ASC`)
+		.prepare(`SELECT * FROM facts WHERE set_id = ?1 ORDER BY position ASC`)
 		.bind(setId)
-		.all<CardRow>();
+		.all<FactRow>();
 	return res.results;
 }
 
 export async function listOwnedSets(db: D1Database, userId: string): Promise<SetWithCount[]> {
 	const res = await db
 		.prepare(
-			`SELECT s.*, (SELECT COUNT(*) FROM cards c WHERE c.set_id = s.id) AS card_count
+			`SELECT s.*, (SELECT COUNT(*) FROM facts f WHERE f.set_id = s.id) AS fact_count
 			 FROM sets s
 			 WHERE s.owner_user_id = ?1
 			 ORDER BY s.updated_at DESC`
@@ -136,7 +149,7 @@ export async function listOwnedSets(db: D1Database, userId: string): Promise<Set
 /**
  * The published gallery.
  *
- * Empty sets are excluded: a published set with no cards is a broken link for
+ * Empty sets are excluded: a published set with no facts is a broken link for
  * whoever clicks it, and the gallery is the one surface a stranger browses.
  */
 export async function listPublishedSets(
@@ -146,10 +159,10 @@ export async function listPublishedSets(
 ): Promise<SetWithCount[]> {
 	const res = await db
 		.prepare(
-			`SELECT s.*, (SELECT COUNT(*) FROM cards c WHERE c.set_id = s.id) AS card_count
+			`SELECT s.*, (SELECT COUNT(*) FROM facts f WHERE f.set_id = s.id) AS fact_count
 			 FROM sets s
 			 WHERE s.published_at IS NOT NULL
-			   AND (SELECT COUNT(*) FROM cards c WHERE c.set_id = s.id) > 0
+			   AND (SELECT COUNT(*) FROM facts f WHERE f.set_id = s.id) > 0
 			 ORDER BY s.published_at DESC
 			 LIMIT ?1 OFFSET ?2`
 		)

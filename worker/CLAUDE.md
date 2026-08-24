@@ -27,7 +27,8 @@ hadoku_site/workers/study-api (host worker)
 - `src/db.ts` - D1 helpers, id generation, and the visibility rules
 - `src/auth.ts` - who may read, who may write
 - `src/routes/health.ts` - Health check endpoint (probes D1)
-- `src/routes/sets.ts` - set + card CRUD, publish/unpublish
+- `src/routes/sets.ts` - set + fact CRUD, publish/unpublish
+- `src/variants.ts` - the ONE implementation of fact -> questions
 - `src/routes/progress.ts` - a reader's saved place in a set
 
 ## Access model, in one place
@@ -49,15 +50,40 @@ to PATCH, and a path-level middleware cannot express one path with two policies.
 
 ## Database
 
-D1, bound as `STUDY_DB`. Three tables — `sets`, `cards`, `set_progress` — with
-migrations in `hadoku_site/workers/study-api/migrations/`.
+D1, bound as `STUDY_DB`. Migrations live in
+`hadoku_site/workers/study-api/migrations/` and are applied by CI before the
+deploy — study-api is in the `apply_migrations` list in `deploy-workers.yml`.
 
-`set_progress` is a resume BOOKMARK, not a scheduling record: v1 is a plain pass
-over a set, so there is no interval or due date. Its `results` column stores a
-JSON map of cardId to a result STRING (`got` / `missed`) rather than a boolean,
-because v2 judges typed answers with an LLM and will need a third verdict —
-widening a string union is not a migration, dropping a `correct BOOLEAN` column
-is.
+Tables: `sets`, `facts`, `variant_ratings`, `user_variant_ratings`, `attempts`,
+`set_progress`. (`cards` still exists, holding the pre-0003 rows the backfill
+was derived from. 0004 drops it once production has confirmed the migration.)
+
+**A fact is the unit of storage, not a question.** `facts.slots` is a JSON
+object of named values — what is true. `facts.questions` is a JSON array of
+declarations: which slot is the ANSWER, which are shown, how it reads.
+
+**Variants are derived on read and never stored.** `expandFact` in
+`variants.ts` is the only implementation, and it lives here rather than in the
+client on purpose: a variant's key is what ratings hang off, and a key computed
+in two places is a key that eventually disagrees with itself — silently, with
+no error, splitting one question's history in two. `GET /sets/{id}` returns
+variants fully resolved and the client renders what it is handed.
+
+The response carries BOTH `questions` (as authored) and `variants` (as
+resolved). Only the first is content: exporting from `variants` alone would
+bake this build's fallback phrasings in as though someone had written them.
+
+**A fact keeps its id across a save.** Saving replaces a set's facts wholesale,
+so `resolveFactIds` hands each incoming fact back the id it arrived with when
+that id already belongs to the set. Drop the ids and every rating and attempt
+hanging off them is orphaned with no error anywhere.
+
+`set_progress` is a resume BOOKMARK, not a scheduling record — one row per
+reader, overwritten on every grade, deleted when a pass completes. `attempts`
+is what it could never be: append-only, one row per answer, with the rating
+before and after so a change to the drift formula can be replayed over history
+rather than orphaning it. Both key on VARIANT ids (`factId:variantKey`), not
+fact ids: two questions over one fact are two separate things to get right.
 
 ## Development
 

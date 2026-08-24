@@ -15,11 +15,20 @@
  */
 
 import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import type { CardResult } from '../api/types'
+import type { CardResult, StudyVariant } from '../api/types'
 
 export interface FlipCardProps {
   front: string
   back: string
+  /**
+   * Slots shown alongside the question.
+   *
+   * Not decoration: a question that asks one slot and shows three is
+   * unanswerable without them. Empty for a migrated flashcard, whose prompt
+   * already IS the shown side — so nothing renders and the card looks exactly
+   * as it always did.
+   */
+  context?: StudyVariant['given']
   flipped: boolean
   onFlip: () => void
   onGrade: (result: CardResult) => void
@@ -30,7 +39,7 @@ const TAP_SLOP = 10
 /** How far the gesture must commit to one axis before it is claimed. */
 const AXIS_SLOP = 8
 
-export function FlipCard({ front, back, flipped, onFlip, onGrade }: FlipCardProps) {
+export function FlipCard({ front, back, context = [], flipped, onFlip, onGrade }: FlipCardProps) {
   const [dx, setDx] = useState(0)
   const [dragging, setDragging] = useState(false)
 
@@ -138,7 +147,15 @@ export function FlipCard({ front, back, flipped, onFlip, onGrade }: FlipCardProp
       onPointerCancel={reset}
       role="button"
       tabIndex={0}
-      aria-label={flipped ? `Answer: ${back}. Grade it.` : `Question: ${front}. Reveal the answer.`}
+      aria-label={
+        flipped
+          ? `Answer: ${back}. Grade it.`
+          : // The context is part of the question, so a screen reader has to
+            // hear it before being asked to answer.
+            `Question: ${context.map(g => `${g.slot}, ${g.value}`).join('. ')}${
+              context.length > 0 ? '. ' : ''
+            }${front}. Reveal the answer.`
+      }
     >
       <div className="flip-card__inner">
         {/*
@@ -150,6 +167,16 @@ export function FlipCard({ front, back, flipped, onFlip, onGrade }: FlipCardProp
           height this arrangement exists to reserve.
         */}
         <div className="flip-card__face flip-card__face--front" aria-hidden={flipped}>
+          {context.length > 0 && (
+            <dl className="flip-card__given">
+              {context.map(({ slot, value }) => (
+                <div key={slot} className="flip-card__given-row">
+                  <dt className="flip-card__given-slot">{slot}</dt>
+                  <dd className="flip-card__given-value">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
           <p className="flip-card__text">{front}</p>
         </div>
         <div className="flip-card__face flip-card__face--back" aria-hidden={!flipped}>
