@@ -223,27 +223,58 @@ of, which is the opposite of what a personal rating is for. It is also held
 FIXED across a batch, so an answer's effect does not depend on the order the
 others happened to arrive in.
 
-### A board row is a rank, not a stored tier
+### A board is dealt from the content, not tagged into existence
 
-`seedTier` seeds a rating and is never read again once a question has one. The
-ROW comes from ordering a column's questions against each other at deal time —
-which is the whole reason a board responds to play. A question you have started
-getting right slides down the board on its own.
+**A column is an asked SLOT.** "Name that year" is every question whose answer
+is a `when`; "Who was it?" is every `who`. Nothing is tagged for the board and
+there is no per-fact category — the `attrs.board` namespace that used to hold
+one was removed once nothing read it, because a schema describing a field with
+no reader is how a dead feature keeps looking alive.
 
-Two rules fall out of that:
+**A row is a RANK**, decided by ordering a column's questions against each
+other at deal time. `seedTier` seeds a rating and is never read again once a
+question has one. That is the whole reason a board responds to play: a question
+you have started getting right slides down the board on its own.
 
-- **A board is DEALT once and never re-sorted.** The ratings are fetched on
-  entry, held for the session, and deliberately not refreshed from the answers
-  being recorded. Re-ranking mid-game would slide tiles out from under a thumb
+Two consequences:
+
+- **A board is DEALT once and never re-sorted.** Ratings are fetched on entry,
+  held for the session, and deliberately not refreshed from the answers being
+  recorded. Re-ranking mid-game would slide tiles out from under a thumb
   already moving toward one, and the point of a rating is where it puts a
   question _next_ time.
-- **One fact may be asked only once per board.** A fact asked four ways is
-  normal content, so this is enforced in `buildBoard` rather than left to the
-  author — and it is claimed _as the column is filled_, not filtered once up
-  front, or two variants of one fact both slip into the same column.
+- **Rows shrink before columns.** Four angles of attack matter more than a full
+  ladder, so a thin set renders 4×2 rather than 2×5.
 
-A column with more than five questions is **spanned**, not truncated: taking
-the first five would build a board out of the five you already know.
+### Why the fill is a matching and not a greedy pass
+
+**One fact may be asked only once per board.** Under the old per-fact
+categories that was free — every question about a fact shared a column, so it
+could only appear once anyway. Asking by slot scatters one fact's questions
+across four columns, and "where did Luther meet Charles V" now genuinely can
+collide with "who did Luther meet at Worms".
+
+That makes filling the grid an assignment problem: a fact taken by one column
+is unavailable to every other, so picking each column's best independently can
+strand a column whose few options have all been claimed. The classic fix is
+backtracking with a retry budget. `generate.ts` uses **maximum bipartite
+matching** (Kuhn's) instead — shorter, always finds a full board when one
+exists, and has no budget to tune. Cells state a _preference_ (the question
+they would ideally hold, spread across the column's range) and the matching
+honours it where it can.
+
+`model.test.ts` pins the case that separates the two: two columns, two rows,
+one fact that could fill either. A greedy pass lets the first column take both
+of its options and strands the second; matching makes it give one back.
+
+**At least one column is explain-it**, when the set has one. A board of names
+and years is a quiz you can win without understanding anything. The guarantee
+displaces the _weakest_ otherwise-chosen column, so it costs as little coverage
+as possible.
+
+A set of plain flashcards yields **no** columns and is not offered as a board:
+its only slots are `prompt` and `answer`, and a column headed "Answer" is the
+whole deck with a number on it.
 
 ### Every answer reaches the ledger, or waits for one that does
 

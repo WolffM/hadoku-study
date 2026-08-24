@@ -32,7 +32,9 @@ and shows some of the rest ("given", which defaults to every other slot).
 - "seedTier" is 1-5 and only SEEDS difficulty. Play moves it from there, so an
   approximate tier is fine and a precise one is not worth agonising over.
 - "detail" is the context revealed AFTER the answer — the why, never the answer.
-- "attrs.board.category" is the column a question sits in on a Jeopardy board.
+- The asked slot is also a BOARD COLUMN: every question answering "when" makes
+  up "Name that year". A set that asks several kinds of question can be played
+  as a board with no tagging at all, so give facts a spread of askable slots.
 
 KEEP EVERY FACT'S "id" EXACTLY AS IT APPEARS. Ratings and play history hang off
 it, and a fact that comes back without its id is treated as a new one — silently

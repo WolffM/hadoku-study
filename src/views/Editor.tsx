@@ -23,16 +23,14 @@ import type { StudyClient } from '../api/client'
 import type { FactInput, StudySetDetail } from '../api/types'
 import { LEGACY_ANSWER_SLOT, LEGACY_PROMPT_SLOT, SetFileError, parseImport } from '../setFile'
 import type { PlayCard } from '../model/playCards'
-import { KNOWN_SLOTS } from '../model/slots'
+import { KNOWN_SLOTS, askedSlots } from '../model/slots'
 import {
   blankFact,
   cleaned,
   factIssue,
   isBlank as isFactBlank,
   isSimple,
-  readCategory,
   simpleTier,
-  withCategory,
   withTier
 } from '../model/factEdits'
 import { TIERS, missingForBoard, pointsFor } from '../games/board'
@@ -71,23 +69,32 @@ const toRow = (fact: FactInput): Row => ({
 
 const blankRow = (): Row => toRow(blankFact())
 
-/** Enough of a question for `missingForBoard` to judge it, without a save. */
-const previewCard = (row: Row): PlayCard => ({
-  id: row.key,
-  factId: row.key,
-  variantKey: 'preview',
-  front: '',
-  back: '',
-  detail: null,
-  given: [],
-  open: false,
-  seedTier: simpleTier(row.fact) ?? 3,
-  attrs: row.fact.attrs ?? null
-})
-
+/**
+ * Enough of each question for `missingForBoard` to judge the set, before
+ * anything has been saved.
+ *
+ * One preview per ASKED SLOT, because a board's columns are asked slots — a
+ * single card per row could not represent a fact that will become four
+ * different columns.
+ */
 /** Dropped silently on import and on save — everything else with content in
  *  it is kept and reported on. */
 const isBlank = (row: Row): boolean => isFactBlank(row.fact)
+
+const previewCards = (row: Row): PlayCard[] =>
+  askedSlots(row.fact).map(ask => ({
+    id: `${row.key}:${ask}`,
+    factId: row.key,
+    variantKey: ask,
+    ask,
+    front: '',
+    back: '',
+    detail: null,
+    given: [],
+    open: false,
+    seedTier: simpleTier(row.fact) ?? 3,
+    attrs: row.fact.attrs ?? null
+  }))
 
 export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
   const [title, setTitle] = useState(existing?.title ?? '')
@@ -112,8 +119,10 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
   // extra inputs per row would tax every one of them to serve some. Opens by
   // default when the set already has board data, so editing a board does not
   // hide the thing that makes it a board.
-  const [showBoard, setShowBoard] = useState(
-    () => existing?.facts.some(fact => readCategory(fact) !== '') ?? false
+  // Opens by default for a set that has been given real slots, since that is
+  // the set whose author is likely tuning tiers rather than typing cards.
+  const [showExtras, setShowExtras] = useState(
+    () => existing?.facts.some(fact => Object.keys(fact.slots).length > 2) ?? false
   )
   const fileInput = useRef<HTMLInputElement>(null)
   const [saving, setSaving] = useState(false)
@@ -139,12 +148,7 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
   // What still stands between this set and a playable board. Null when nothing
   // does — tagging a set should show progress, not a silent threshold.
   const boardProgress = useMemo(
-    () => missingForBoard(rows.filter(row => !isBlank(row)).map(previewCard)),
-    [rows]
-  )
-
-  const categories = useMemo(
-    () => [...new Set(rows.map(row => readCategory(row.fact)).filter(c => c !== ''))],
+    () => missingForBoard(rows.filter(row => !isBlank(row)).flatMap(previewCards)),
     [rows]
   )
 
@@ -182,8 +186,8 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
       setDescription(current => (current.trim() === '' ? parsed.description! : current))
     }
 
-    // An imported board must not look like it lost its metadata.
-    if (parsed.facts.some(fact => readCategory(fact) !== '')) setShowBoard(true)
+    // An imported set with real slots must not look like it lost them.
+    if (parsed.facts.some(fact => Object.keys(fact.slots).length > 2)) setShowExtras(true)
 
     setError(null)
     setImported(
@@ -286,10 +290,10 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
           <button
             type="button"
             className="btn btn--ghost btn--sm"
-            onClick={() => setShowBoard(v => !v)}
-            aria-pressed={showBoard}
+            onClick={() => setShowExtras(v => !v)}
+            aria-pressed={showExtras}
           >
-            {showBoard ? 'Hide board fields' : 'Board fields'}
+            {showExtras ? 'Hide tier & detail' : 'Tier & detail'}
           </button>
           <button
             type="button"
@@ -347,22 +351,15 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
 
       {imported !== null && <p className="muted editor__imported">{imported}</p>}
 
-      {/* Suggests names already in use, so a set does not end up with "Places"
-          and "places" as two columns, or `when` and `year` as two slots. */}
-      <datalist id="editor-categories">
-        {categories.map(category => (
-          <option key={category} value={category} />
-        ))}
-      </datalist>
+      {/* Suggests slot names already known, so a set does not end up with
+          `when` and `year` as two slots meaning the same thing. */}
       <datalist id="editor-slot-names">
         {KNOWN_SLOTS.map(name => (
           <option key={name} value={name} />
         ))}
       </datalist>
 
-      {showBoard && boardProgress !== null && (
-        <p className="muted editor__imported">{boardProgress}</p>
-      )}
+      {boardProgress !== null && <p className="muted editor__imported">{boardProgress}</p>}
 
       <ul className="editor__rows">
         {rows.map((row, index) => {
@@ -435,17 +432,8 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
                 </button>
               </div>
 
-              {showBoard && !expanded && (
+              {showExtras && !expanded && (
                 <div className="editor__board-fields">
-                  <input
-                    className="field__input"
-                    list="editor-categories"
-                    value={readCategory(row.fact)}
-                    onChange={e => patchFact(row.key, withCategory(row.fact, e.target.value))}
-                    placeholder="Category"
-                    maxLength={40}
-                    aria-label={`Fact ${index + 1} board category`}
-                  />
                   <select
                     className="field__input"
                     value={simpleTier(row.fact) ?? ''}

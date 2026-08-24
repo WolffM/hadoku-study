@@ -12,10 +12,12 @@
 import { useMemo } from 'react'
 import type { StudySetDetail } from '../../api/types'
 import { toPlayCards } from '../../model/playCards'
-import { TIERS, buildBoard } from './model'
+import { buildBoard } from './model'
 
 export function BoardPreview({ set }: { set: StudySetDetail }) {
   const board = useMemo(() => buildBoard(toPlayCards(set.facts)), [set.facts])
+
+  const rowCount = Math.max(0, ...board.columns.map(column => column.cells.size))
 
   // Decorative: the tile's own label already carries the clue count and score
   // for anyone not looking at pictures.
@@ -23,14 +25,14 @@ export function BoardPreview({ set }: { set: StudySetDetail }) {
     <span
       className="board-preview"
       aria-hidden="true"
-      style={{ '--preview-columns': board.categories.length } as React.CSSProperties}
+      style={{ '--preview-columns': board.columns.length } as React.CSSProperties}
     >
-      {TIERS.map(tier =>
-        board.categories.map(category => (
+      {Array.from({ length: rowCount }, (_unused, index) => index + 1).map(tier =>
+        board.columns.map(column => (
           <span
-            key={`${category}-${tier}`}
+            key={`${column.slot}-${tier}`}
             className={`board-preview__cell${
-              board.cells.get(category)?.has(tier) ? ' board-preview__cell--filled' : ''
+              column.cells.has(tier) ? ' board-preview__cell--filled' : ''
             }`}
           />
         ))

@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { GAMES, findGame } from './registry'
-import { authored, clue, detailSet, fact, flashcard } from '../testing/fixtures'
+import { asks, authored, detailSet, fact, flashcard } from '../testing/fixtures'
 
 describe('the registry', () => {
   it('gives every game a unique id, since it doubles as the URL and attrs key', () => {
@@ -44,8 +44,10 @@ describe('availability is decided from the content', () => {
     expect(available).toEqual(['drill'])
   })
 
-  it('offers both once a fact carries a board category', () => {
-    const set = detailSet([flashcard('a'), clue('c', 'Places', 2)])
+  it('offers both once a set asks more than one kind of question', () => {
+    // A board's columns are asked slots, so board-ness is a property of the
+    // CONTENT now — nothing has to be tagged for this game.
+    const set = detailSet([flashcard('a'), asks('b', 'when'), asks('c', 'who')])
     const available = GAMES.filter(g => g.availability(set).playable).map(g => g.id)
     expect(available).toEqual(['drill', 'board'])
   })
@@ -67,17 +69,19 @@ describe('availability is decided from the content', () => {
   })
 
   it('summarises what you are about to play', () => {
-    // A lone clue is the easiest in its column, so it takes row 1 and is worth
-    // 100 — whatever seed tier its author gave it. The row is a RANK now, not
-    // a stored property, which is exactly what lets a board respond to play.
-    const set = detailSet([clue('c', 'Places', 2)])
-    expect(findGame('board')?.availability(set).summary).toContain('1 clue')
-    expect(findGame('board')?.availability(set).summary).toContain('100 points')
+    // Each column has one fact, so each takes row 1 and is worth 100 —
+    // whatever seed tier its author gave it. The row is a RANK now, not a
+    // stored property, which is exactly what lets a board respond to play.
+    const set = detailSet([asks('a', 'when', 2), asks('b', 'who', 4)])
+    const summary = findGame('board')?.availability(set).summary
+    expect(summary).toContain('2 categories')
+    expect(summary).toContain('200 points')
   })
 
   it('scores a full five-row column at the familiar total', () => {
-    const five = [1, 2, 3, 4, 5].map(tier => clue(`c${tier}`, 'Places', tier))
-    expect(findGame('board')?.availability(detailSet(five)).summary).toContain('1500 points')
+    const five = [1, 2, 3, 4, 5].map(tier => asks(`c${tier}`, 'when', tier))
+    const withSecond = [...five, asks('other', 'who')]
+    expect(findGame('board')?.availability(detailSet(withSecond)).summary).toContain('1600 points')
   })
 
   it('counts questions rather than facts when the drill offers a set', () => {

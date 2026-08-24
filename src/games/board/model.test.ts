@@ -1,212 +1,250 @@
 /**
- * Board-ness is derived on every render, so the derivation is the thing worth
- * pinning: it decides whether a set offers a game at all, and it has to give a
- * sane answer for the half-tagged sets that are the normal in-between state.
+ * Dealing a board.
+ *
+ * The rule with teeth is that **one fact may be asked only once per board**.
+ * Columns are asked SLOTS, so one fact's questions scatter across several of
+ * them — and a board that took the obvious pick for each column independently
+ * would routinely ask the same fact twice, or strand a column whose few
+ * options had all been claimed. These tests are what say the matching actually
+ * solves that rather than usually getting away with it.
  */
 
 import { describe, expect, it } from 'vitest'
 import {
-  TIERS,
+  DEFAULT_COLUMNS,
+  MIN_COLUMNS,
   buildBoard,
+  candidateCategories,
+  chooseCategories,
   isPlayable,
+  labelFor,
   missingForBoard,
-  pointsFor,
-  readBoardAttrs,
-  spread
+  pointsFor
 } from './model'
 import { toPlayCards } from '../../model/playCards'
-import { authored, clue, detailSet, fact, flashcard } from '../../testing/fixtures'
+import { asks, authored, fact, flashcard } from '../../testing/fixtures'
 
-/** The questions a set holds, which is what the board actually places. */
-const cardsOf = (facts: Parameters<typeof detailSet>[0]) => toPlayCards(facts)
+const cardsOf = (facts: Parameters<typeof toPlayCards>[0]) => toPlayCards(facts)
 
-const clueCards = (...specs: [string, string, number][]) =>
-  cardsOf(specs.map(([id, category, tier]) => clue(id, category, tier)))
+/** Every clue on the board, flattened. */
+const placed = (board: ReturnType<typeof buildBoard>) =>
+  board.columns.flatMap(column => [...column.cells.values()])
 
 describe('points', () => {
-  it('map a tier to a board value', () => {
+  it('map a row to a board value', () => {
     expect([1, 2, 3, 4, 5].map(pointsFor)).toEqual([100, 200, 300, 400, 500])
   })
 })
 
-describe("reading this game's namespace off a question", () => {
-  it('accepts a fact carrying a category', () => {
-    expect(readBoardAttrs(clueCards(['a', 'Places', 1])[0])).toEqual({ category: 'Places' })
+describe('what a column is', () => {
+  it('is the slot its questions answer', () => {
+    const cards = cardsOf([asks('a', 'when'), asks('b', 'when'), asks('c', 'where')])
+    const found = candidateCategories(cards)
+    expect(found.map(c => c.slot)).toEqual(['when', 'where'])
+    expect(found[0].factCount).toBe(2)
   })
 
-  it('ignores a plain flashcard', () => {
-    expect(readBoardAttrs(cardsOf([flashcard('a')])[0])).toBeNull()
+  it('reads a known slot as a category, and an unknown one as itself', () => {
+    expect(labelFor('when')).toBe('Name that year')
+    expect(labelFor('why')).toBe('Why it mattered')
+    // The GW2 case: a set with a `map` slot should say "Map", not guess.
+    expect(labelFor('map')).toBe('Map')
+    expect(labelFor('screen-shot')).toBe('Screen shot')
   })
 
-  it('ignores a fact whose attrs hold only other games', () => {
-    const cards = cardsOf([fact({ id: 'a', attrs: { nameThatMap: { region: 'x' } } })])
-    expect(readBoardAttrs(cards[0])).toBeNull()
+  it('refuses the two halves of a flashcard as categories', () => {
+    // A column headed "Answer" is the whole deck with a number on it.
+    expect(candidateCategories(cardsOf([flashcard('a'), flashcard('b')]))).toEqual([])
   })
 
-  it('ignores a blank category rather than making a nameless column', () => {
-    const cards = cardsOf([fact({ id: 'a', attrs: { board: { category: '  ' } } })])
-    expect(readBoardAttrs(cards[0])).toBeNull()
-  })
-
-  it('no longer reads a tier from here — that moved to the question', () => {
-    // 0003 moved `difficulty` out to `seedTier`, because a tier seeds a rating
-    // and ratings belong to every mode, not to this one.
-    const cards = cardsOf([fact({ id: 'a', attrs: { board: { category: 'P' } } })])
-    expect(readBoardAttrs(cards[0])).toEqual({ category: 'P' })
+  it('orders columns by how many FACTS could fill them', () => {
+    // Not by question count: one fact may be asked only once per board, so
+    // three questions over one fact can still only fill one cell.
+    const cards = cardsOf([asks('a', 'why', 3, { also: ['when', 'who'] }), asks('b', 'when')])
+    expect(candidateCategories(cards).map(c => c.slot)).toEqual(['when', 'who', 'why'])
   })
 })
 
-describe('building the grid', () => {
-  it('assigns rows by RANK, not by the seed tier stored on a question', () => {
-    // The row is not a property of a question — it is where that question sits
-    // against the others in its column. That is what lets a board respond to
-    // play at all.
-    const board = buildBoard(clueCards(['a', 'Places', 2], ['b', 'Places', 4]))
-    expect(board.cells.get('Places')?.get(1)?.card.factId).toBe('a')
-    expect(board.cells.get('Places')?.get(2)?.card.factId).toBe('b')
-    // Not rows 2 and 4, which is where their seed tiers would have put them.
-    expect(board.cells.get('Places')?.get(4)).toBeUndefined()
+describe('choosing the columns', () => {
+  const many = (slots: string[]) =>
+    candidateCategories(cardsOf(slots.map((slot, i) => asks(`f${i}`, slot))))
+
+  it('takes the richest', () => {
+    const chosen = chooseCategories(many(['when', 'when', 'who', 'where']), 2)
+    expect(chosen.map(c => c.slot)).toEqual(['when', 'where'])
   })
 
-  it('re-sorts when the ranking changes, which is the whole point', () => {
-    const cards = clueCards(['a', 'Places', 1], ['b', 'Places', 5])
-    // `a` was the easy one. Say the reader has been missing it and its rating
-    // has overtaken `b`.
-    const learned = new Map([
-      [cards[0].id, 1500],
-      [cards[1].id, 900]
+  it('guarantees a column you have to explain, when the set has one', () => {
+    // A board of names and years is a quiz you can win without understanding
+    // anything, which is the opposite of the point.
+    const cards = cardsOf([
+      asks('a', 'when'),
+      asks('b', 'when'),
+      asks('c', 'who'),
+      asks('d', 'why', 3, { open: true })
     ])
-    const board = buildBoard(cards, card => learned.get(card.id) ?? 0)
-    expect(board.cells.get('Places')?.get(1)?.card.factId).toBe('b')
-    expect(board.cells.get('Places')?.get(2)?.card.factId).toBe('a')
+    const chosen = chooseCategories(candidateCategories(cards), 2)
+    expect(chosen.some(c => c.hasOpen)).toBe(true)
   })
 
-  it('fills a short column from the bottom row up', () => {
-    const board = buildBoard(clueCards(['a', 'Places', 3], ['b', 'Places', 4]))
-    expect([...(board.cells.get('Places')?.keys() ?? [])]).toEqual([1, 2])
-    expect(board.maxScore).toBe(300)
-  })
-
-  it('orders columns by first appearance, which is the author’s order', () => {
-    const board = buildBoard(clueCards(['a', 'Zebra', 1], ['b', 'Apple', 2]))
-    expect(board.categories).toEqual(['Zebra', 'Apple'])
-  })
-
-  it('leaves an untagged question off the grid but still in the deck', () => {
-    const board = buildBoard(cardsOf([clue('a', 'Places', 1), flashcard('b')]))
-    expect(board.clueCount).toBe(1)
-    expect(board.unplaced.map(c => c.factId)).toEqual(['b'])
-  })
-
-  it('asks a fact only ONCE across the whole board', () => {
-    // "Where did Luther meet Charles V" and "who did Luther meet at Worms" are
-    // the same fact wearing two hats. A fact asked four ways is normal content,
-    // so this is enforced rather than left to the author.
-    const board = buildBoard(cardsOf([authored('a', 'Places')]))
-    expect(board.clueCount).toBe(1)
-    expect(board.unplaced).toHaveLength(1)
-    expect(board.unplaced[0].factId).toBe('a')
-  })
-
-  it('holds that rule across columns too', () => {
-    // Unreachable today — attrs live on the FACT, so every variant of a fact
-    // shares its category. It becomes reachable in phase 4, when a category is
-    // a selector over the asked slot and one fact's questions genuinely land
-    // in different columns. Built by hand here so the rule is pinned before
-    // the content that needs it exists.
-    const [placesCard, peopleCard] = cardsOf([authored('a', 'Places')])
-    const board = buildBoard([
-      placesCard,
-      { ...peopleCard, attrs: { board: { category: 'People' } } }
+  it('displaces the weakest column to make room for it, not the strongest', () => {
+    const cards = cardsOf([
+      asks('a', 'when'),
+      asks('b', 'when'),
+      asks('c', 'when'),
+      asks('d', 'who'),
+      asks('e', 'why', 3, { open: true })
     ])
-    expect(board.clueCount).toBe(1)
-    expect(board.categories).toEqual(['Places', 'People'])
+    const chosen = chooseCategories(candidateCategories(cards), 2)
+    expect(chosen.map(c => c.slot)).toEqual(['when', 'why'])
+  })
+
+  it('asks for nothing when there is nothing to ask', () => {
+    expect(chooseCategories([], DEFAULT_COLUMNS)).toEqual([])
+  })
+})
+
+describe('dealing the grid', () => {
+  it('fills four columns of five from a set with enough facts', () => {
+    const slots = ['when', 'who', 'where', 'why']
+    const facts = slots.flatMap(slot =>
+      Array.from({ length: 5 }, (_, i) => asks(`${slot}${i}`, slot, i + 1))
+    )
+    const board = buildBoard(cardsOf(facts))
+    expect(board.columns).toHaveLength(4)
+    expect(board.clueCount).toBe(20)
+    expect(board.maxScore).toBe(4 * 1500)
+  })
+
+  it('never asks one fact twice, even across columns', () => {
+    // The whole rule. A fact asked four ways offers itself to four columns.
+    const facts = Array.from({ length: 8 }, (_, i) =>
+      asks(`f${i}`, 'when', 3, { also: ['who', 'where', 'why'] })
+    )
+    const board = buildBoard(cardsOf(facts))
+    const factIds = placed(board).map(clue => clue.card.factId)
+    expect(new Set(factIds).size).toBe(factIds.length)
+  })
+
+  it('finds a full board where picking each column independently would not', () => {
+    // Two columns, two rows. Fact `shared` can fill either; `onlyWhen` and
+    // `onlyWho` can each fill one. A greedy pass that let `when` take both of
+    // its options would strand `who`; matching makes it give one back.
+    const cards = cardsOf([
+      asks('shared', 'when', 1, { also: ['who'] }),
+      asks('onlyWhen', 'when', 2),
+      asks('onlyWho', 'who', 2)
+    ])
+    const board = buildBoard(cards, { columns: 2, rows: 2 })
+    const bySlot = Object.fromEntries(board.columns.map(c => [c.slot, c.cells.size]))
+    expect(bySlot).toEqual({ when: 2, who: 1 })
+    expect(new Set(placed(board).map(c => c.card.factId)).size).toBe(3)
+  })
+
+  it('orders each column by rank, easiest at the top', () => {
+    const facts = [asks('hard', 'when', 5), asks('easy', 'when', 1), asks('mid', 'when', 3)]
+    const board = buildBoard(cardsOf(facts), { columns: 1 })
+    const column = board.columns[0]
+    expect([1, 2, 3].map(row => column.cells.get(row)?.card.factId)).toEqual([
+      'easy',
+      'mid',
+      'hard'
+    ])
+  })
+
+  it('re-sorts when the ranking changes, which is why a board responds to play', () => {
+    const cards = cardsOf([asks('a', 'when', 1), asks('b', 'when', 5)])
+    const learned = new Map(cards.map(card => [card.id, card.factId === 'a' ? 1500 : 900]))
+    const board = buildBoard(cards, { columns: 1, rankBy: card => learned.get(card.id) ?? 0 })
+    expect(board.columns[0].cells.get(1)?.card.factId).toBe('b')
+    expect(board.columns[0].cells.get(2)?.card.factId).toBe('a')
   })
 
   it('spans a long column rather than taking its five easiest', () => {
-    // Otherwise a category with twenty questions builds a board out of the
-    // twenty per cent you already know, which is not a board.
-    const many = clueCards(
-      ...Array.from({ length: 9 }, (_, i): [string, string, number] => [`f${i}`, 'Places', 1])
-    )
-    const ranks = new Map(many.map((card, index) => [card.id, index]))
-    const board = buildBoard(many, card => ranks.get(card.id) ?? 0)
-    const placed = TIERS.map(tier => board.cells.get('Places')?.get(tier)?.card.factId)
-    expect(placed).toEqual(['f0', 'f2', 'f4', 'f6', 'f8'])
-    expect(board.unplaced).toHaveLength(4)
+    const facts = Array.from({ length: 15 }, (_, i) => asks(`f${i}`, 'when', 3))
+    const ranks = new Map(facts.map((f, i) => [f.id, i]))
+    const board = buildBoard(cardsOf(facts), {
+      columns: 1,
+      rankBy: card => ranks.get(card.factId) ?? 0
+    })
+    const chosen = [...board.columns[0].cells.values()].map(c => ranks.get(c.card.factId) ?? 0)
+    expect(chosen[0]).toBe(0)
+    expect(chosen[chosen.length - 1]).toBe(14)
   })
 
-  it('always fills five rows when there are five to fill', () => {
-    // Rounding can collide on short lists — six questions into five rows — and
-    // a silently four-row column would look like missing content.
-    for (const count of [5, 6, 7, 8, 11, 25]) {
-      const many = clueCards(
-        ...Array.from({ length: count }, (_, i): [string, string, number] => [`f${i}`, 'C', 1])
-      )
-      const ranks = new Map(many.map((card, index) => [card.id, index]))
-      const board = buildBoard(many, card => ranks.get(card.id) ?? 0)
-      expect(board.clueCount, `${count} questions`).toBe(5)
-    }
+  it('shrinks rows before columns when a set is thin', () => {
+    // Four angles of attack matters more than the full ladder.
+    const cards = cardsOf([
+      asks('a', 'when'),
+      asks('b', 'who'),
+      asks('c', 'where'),
+      asks('d', 'why', 3, { open: true })
+    ])
+    const board = buildBoard(cards)
+    expect(board.columns).toHaveLength(4)
+    expect(board.columns.every(column => column.cells.size === 1)).toBe(true)
+    expect(board.clueCount).toBe(4)
   })
 
-  it('breaks a rating tie the same way every render', () => {
-    // Two questions at the same rating must not swap places between renders —
-    // a board that reshuffles under a thumb is worse than one ordered badly.
-    const cards = clueCards(['a', 'Places', 3], ['b', 'Places', 3])
-    const first = buildBoard(cards, () => 1200)
-    const second = buildBoard(cards, () => 1200)
-    expect(first.cells.get('Places')?.get(1)?.card.factId).toBe('a')
-    expect(second.cells.get('Places')?.get(1)?.card.factId).toBe('a')
-  })
-})
-
-describe('spread', () => {
-  it('returns everything when there is nothing to drop', () => {
-    expect(spread([1, 2, 3], 5)).toEqual([1, 2, 3])
+  it('leaves everything it could not place in the deck', () => {
+    const facts = Array.from({ length: 9 }, (_, i) => asks(`f${i}`, 'when', 3))
+    const cards = cardsOf(facts)
+    const board = buildBoard(cards, { columns: 1, rows: 5 })
+    expect(board.clueCount).toBe(5)
+    expect(board.unplaced).toHaveLength(cards.length - 5)
   })
 
-  it('keeps both ends, so the ladder still spans the range', () => {
-    const picked = spread([0, 1, 2, 3, 4, 5, 6, 7, 8], 5)
-    expect(picked[0]).toBe(0)
-    expect(picked[picked.length - 1]).toBe(8)
+  it('deals the same board twice from the same set', () => {
+    // A grid that reshuffled between renders would be worse than one ordered
+    // badly.
+    const facts = Array.from({ length: 12 }, (_, i) => asks(`f${i}`, i % 2 ? 'when' : 'who', 3))
+    const a = buildBoard(cardsOf(facts))
+    const b = buildBoard(cardsOf(facts))
+    expect(placed(a).map(c => c.card.id)).toEqual(placed(b).map(c => c.card.id))
   })
 
-  it('never returns duplicates', () => {
-    for (let n = 5; n <= 30; n += 1) {
-      const picked = spread(
-        Array.from({ length: n }, (_, i) => i),
-        5
-      )
-      expect(new Set(picked).size, `${n} items`).toBe(5)
-    }
+  it('deals nothing from a plain flashcard deck', () => {
+    expect(buildBoard(cardsOf([flashcard('a'), flashcard('b')])).clueCount).toBe(0)
   })
 })
 
 describe('whether to offer the game at all', () => {
-  it('says yes once one question qualifies', () => {
-    expect(isPlayable(cardsOf([flashcard('a'), clue('b', 'Places', 1)]))).toBe(true)
+  it('needs more than one kind of question', () => {
+    expect(isPlayable(cardsOf([asks('a', 'when'), asks('b', 'when')]))).toBe(false)
+    expect(isPlayable(cardsOf([asks('a', 'when'), asks('b', 'who')]))).toBe(true)
   })
 
-  it('says no for a plain deck', () => {
+  it('says no to a deck of flashcards', () => {
     expect(isPlayable(cardsOf([flashcard('a')]))).toBe(false)
+  })
+
+  it('says yes to a set with real slots', () => {
+    expect(isPlayable(cardsOf([authored('a')]))).toBe(true)
   })
 })
 
 describe('telling the author what is missing', () => {
-  it('says nothing when the whole set is tagged', () => {
-    expect(missingForBoard(clueCards(['a', 'Places', 1]))).toBeNull()
+  it('says nothing when a board can be dealt', () => {
+    expect(missingForBoard(cardsOf([asks('a', 'when'), asks('b', 'who')]))).toBeNull()
   })
 
   it('asks for content before anything else', () => {
     expect(missingForBoard([])).toContain('facts')
   })
 
-  it('asks for a category when nothing is tagged', () => {
-    expect(missingForBoard(cardsOf([flashcard('a')]))).toContain('category')
+  it('explains what a flashcard deck is missing', () => {
+    const message = missingForBoard(cardsOf([flashcard('a')]))
+    expect(message).toContain('slots')
   })
 
-  it('counts progress on a half-tagged set', () => {
-    const message = missingForBoard(cardsOf([clue('a', 'Places', 1), flashcard('b')]))
-    expect(message).toContain('1 of 2')
+  it('says when there is only one kind of question', () => {
+    const message = missingForBoard(cardsOf([asks('a', 'when'), asks('b', 'when')]))
+    expect(message).toContain(String(MIN_COLUMNS))
+    expect(message).toContain('Name that year')
+  })
+
+  it('ignores a namespace belonging to some other game', () => {
+    const other = fact({ id: 'x', attrs: { nameThatMap: { region: 'x' } } })
+    expect(isPlayable(cardsOf([other]))).toBe(false)
   })
 })

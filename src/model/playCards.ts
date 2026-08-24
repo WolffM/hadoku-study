@@ -19,6 +19,9 @@ export interface PlayCard {
   id: string
   factId: string
   variantKey: string
+  /** Which slot this question's answer is. A board column is made of every
+   *  question that asks the same slot, so this is what a category IS. */
+  ask: string
   /** The question. */
   front: string
   /** The answer. */
@@ -44,6 +47,7 @@ export function toPlayCards(facts: StudyFact[]): PlayCard[] {
       id: playCardId(fact.id, variant.key),
       factId: fact.id,
       variantKey: variant.key,
+      ask: variant.ask,
       front: variant.prompt,
       back: variant.answer,
       detail: fact.detail ?? null,

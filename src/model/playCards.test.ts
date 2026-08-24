@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { countQuestions, playCardId, toPlayCards } from './playCards'
-import { authored, clue, fact, flashcard, variant } from '../testing/fixtures'
+import { asks, authored, fact, flashcard, variant } from '../testing/fixtures'
 
 describe('toPlayCards', () => {
   it('yields one card per question, not per fact', () => {
@@ -59,8 +59,13 @@ describe('toPlayCards', () => {
   })
 
   it("copies the fact's game bag onto every question over it", () => {
-    const cards = toPlayCards([authored('a', 'Places')])
-    expect(cards.every(c => c.attrs?.board)).toBe(true)
+    // Nothing this bundle ships reads a namespace any more — the board derives
+    // its columns from content — but a bag written by a newer client still has
+    // to reach every question over that fact.
+    const tagged = { ...authored('a'), attrs: { nameThatMap: { region: 'Kryta' } } }
+    expect(
+      toPlayCards(tagged.variants.length ? [tagged] : []).every(c => c.attrs?.nameThatMap)
+    ).toBe(true)
   })
 
   it('normalises a missing detail and a missing bag to null', () => {
@@ -70,8 +75,12 @@ describe('toPlayCards', () => {
   })
 
   it('carries the seed tier through from the question, not the fact', () => {
-    const [only] = toPlayCards([clue('a', 'Places', 5)])
+    const [only] = toPlayCards([asks('a', 'when', 5)])
     expect(only.seedTier).toBe(5)
+  })
+
+  it('carries the asked slot, which is what a board column is made of', () => {
+    expect(toPlayCards([asks('a', 'when')])[0].ask).toBe('when')
   })
 
   it('carries openness through, which is how a board finds an explain-it column', () => {

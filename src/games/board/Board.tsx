@@ -22,7 +22,7 @@ import type { GameProps } from '../types'
 import type { QuestionRating } from '../../api/types'
 import { toPlayCards } from '../../model/playCards'
 import { indexRatings, recordAttempt } from '../../state/attempts'
-import { TIERS, buildBoard, bySeedTier, pointsFor, type BoardClue, type RankBy } from './model'
+import { buildBoard, bySeedTier, pointsFor, type BoardClue, type RankBy } from './model'
 
 /** How a cell was resolved. Absent means unplayed. */
 type Outcome = 'got' | 'missed'
@@ -71,14 +71,14 @@ export function Board({ set, client, syncEnabled, onExit }: GameProps) {
     // by seed tier.
     const rankBy: RankBy =
       ratings.size > 0 ? card => ratings.get(card.id)?.local ?? card.seedTier : bySeedTier
-    return buildBoard(cards, rankBy)
+    return buildBoard(cards, { rankBy })
   }, [cards, ratings])
   // question id -> clue, so scoring is a lookup rather than a scan for every
   // graded answer.
   const clues = useMemo(() => {
     const index = new Map<string, BoardClue>()
-    for (const column of board?.cells.values() ?? []) {
-      for (const clue of column.values()) index.set(clue.card.id, clue)
+    for (const column of board?.columns ?? []) {
+      for (const clue of column.cells.values()) index.set(clue.card.id, clue)
     }
     return index
   }, [board])
@@ -96,6 +96,8 @@ export function Board({ set, client, syncEnabled, onExit }: GameProps) {
     [clues, outcomes]
   )
 
+  // The deepest column decides how many rows the grid draws.
+  const rowCount = Math.max(0, ...(board?.columns ?? []).map(column => column.cells.size))
   const playedCount = Object.keys(outcomes).length
   const finished = board !== null && board.clueCount > 0 && playedCount === board.clueCount
 
@@ -201,21 +203,24 @@ export function Board({ set, client, syncEnabled, onExit }: GameProps) {
       <div className="board__stage">
         <div
           className="board__grid"
-          style={{ '--board-columns': board.categories.length } as React.CSSProperties}
+          style={{ '--board-columns': board.columns.length } as React.CSSProperties}
         >
-          {board.categories.map(category => (
-            <h2 key={`head-${category}`} className="board__category">
-              {category}
+          {board.columns.map(column => (
+            <h2 key={`head-${column.slot}`} className="board__category">
+              {column.label}
             </h2>
           ))}
 
-          {TIERS.map(tier =>
-            board.categories.map(category => {
-              const clue = board.cells.get(category)?.get(tier)
+          {/* Rows are as deep as the deepest column. A shallower one leaves its
+              expensive rows empty, which reads as "less in this category"
+              rather than as a missing tile. */}
+          {Array.from({ length: rowCount }, (_unused, index) => index + 1).map(tier =>
+            board.columns.map(column => {
+              const clue = column.cells.get(tier)
               if (!clue) {
                 return (
                   <span
-                    key={`${category}-${tier}`}
+                    key={`${column.slot}-${tier}`}
                     className="board__cell board__cell--empty"
                     aria-hidden="true"
                   />
@@ -229,7 +234,7 @@ export function Board({ set, client, syncEnabled, onExit }: GameProps) {
                   className={`board__cell${outcome ? ` board__cell--${outcome}` : ''}`}
                   onClick={() => openClue(clue)}
                   disabled={outcome !== undefined}
-                  aria-label={`${category}, ${pointsFor(tier)} points${outcome ? `, answered ${outcome}` : ''}`}
+                  aria-label={`${column.label}, ${pointsFor(tier)} points${outcome ? `, answered ${outcome}` : ''}`}
                 >
                   {pointsFor(tier)}
                 </button>

@@ -6,7 +6,6 @@ import { z } from '@hono/zod-openapi';
 import { DetailedErrorResponseSchema, createSuccessResponseSchema } from '@wolffm/worker-utils';
 import {
 	MAX_ATTRS_LENGTH,
-	MAX_CATEGORY_LENGTH,
 	MAX_DESCRIPTION_LENGTH,
 	MAX_FACTS_PER_SET,
 	MAX_FIELD_LENGTH,
@@ -37,44 +36,32 @@ export const SuccessResponseSchema = createSuccessResponseSchema;
 // ============================================================================
 
 /**
- * What the BOARD game hangs on a fact.
- *
- * Only a column label. `difficulty` used to live here and moved out to the
- * variant's `seedTier` in migration 0003 — a tier seeds a RATING, and ratings
- * are core to every mode rather than particular to this one. What is left is
- * genuinely board-specific.
- */
-export const BoardAttrsSchema = z
-	.strictObject({
-		/** A plain string, not a table: a category has no identity beyond its
-		 *  name and no life outside the set using it. */
-		category: z.string().trim().min(1).max(MAX_CATEGORY_LENGTH).openapi({ example: 'Places' }),
-	})
-	.openapi('BoardAttrs', {
-		description:
-			'The board game’s data on a fact. Strict: an unrecognised key here is rejected rather than dropped. A v1 file still carrying `difficulty` fails loudly and is told to move it to the question’s `seedTier`, which is far better than importing cleanly with every board tier silently gone. Unknown GAMES are still passed through untouched — that flexibility lives one level up, in the bag, not inside a namespace the server claims to understand.',
-	});
-
-/**
  * Per-game attributes, keyed by game id.
  *
- * `.catchall` rather than the default strip: an unknown namespace is a game
- * this deploy has not heard of, and dropping it would make the server the
+ * `.catchall` rather than the default strip: a namespace here is a game this
+ * deploy has not heard of, and dropping it would make the server the
  * bottleneck on every new mode. Passing it through means a game can be built
  * and played entirely in the client before any of this changes.
  *
- * The cost is that unknown keys are unvalidated, so the SIZE is capped below;
+ * There are currently NO typed namespaces. `board` used to hold a per-fact
+ * category; the board now derives its columns from the slots a set's questions
+ * ask, so nothing reads a namespace at all and typing one would be describing
+ * a field with no reader. The mechanism stays because the next game will want
+ * it — and because a set authored by a newer client still has to round-trip
+ * through this one untouched.
+ *
+ * The cost is that these keys are unvalidated, so the SIZE is capped below;
  * without that this is an unbounded blob store.
  */
 export const FactAttrsSchema = z
-	.object({ board: BoardAttrsSchema.optional() })
+	.object({})
 	.catchall(z.unknown())
 	.refine((attrs) => JSON.stringify(attrs).length <= MAX_ATTRS_LENGTH, {
 		message: `Game attributes must serialize to at most ${MAX_ATTRS_LENGTH} characters.`,
 	})
 	.openapi('FactAttrs', {
 		description:
-			'Per-game attributes keyed by game id. Known games are typed; unknown keys are preserved as-is so a new mode needs no schema change. The whole object must serialize to at most ' +
+			'Per-game attributes keyed by game id, preserved as-is so a new mode needs no schema change. No namespace is currently read by any game. The whole object must serialize to at most ' +
 			`${MAX_ATTRS_LENGTH} characters.`,
 	});
 

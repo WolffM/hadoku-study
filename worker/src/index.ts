@@ -109,6 +109,10 @@ API expands each one into the QUESTIONS you can ask of it:
 and \`definition\` are treated as answers you explain rather than name. Any other
 slot name works and simply needs a \`prompt\`.
 
+The asked slot is also a BOARD COLUMN: every question answering \`when\` makes up
+"Name that year". A set that asks several kinds of question can be played as a
+board with no tagging at all — which is why nothing here has a category field.
+
 Responses carry a \`variants\` array per fact, each with a stable \`key\`. Those
 keys are derived here and only here, so read them rather than building them.
 

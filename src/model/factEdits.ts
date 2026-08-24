@@ -8,7 +8,6 @@
  */
 
 import type { FactInput } from '../api/types'
-import { BOARD_NAMESPACE } from '../games/board'
 import { LEGACY_ANSWER_SLOT, LEGACY_PROMPT_SLOT } from '../setFile'
 
 /**
@@ -33,28 +32,6 @@ export const blankFact = (): FactInput => ({
   // generate the reverse question and quietly double the set.
   questions: [{ ask: LEGACY_ANSWER_SLOT, given: [LEGACY_PROMPT_SLOT] }]
 })
-
-export function readCategory(fact: FactInput): string {
-  const raw = fact.attrs?.[BOARD_NAMESPACE]
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return ''
-  const { category } = raw as Record<string, unknown>
-  return typeof category === 'string' ? category : ''
-}
-
-/**
- * Set or clear the board category, leaving other games' namespaces alone.
- *
- * An empty category REMOVES the namespace rather than storing a blank one:
- * a blank would render as a nameless column, and an empty bag is not the same
- * thing as no bag.
- */
-export function withCategory(fact: FactInput, category: string): FactInput {
-  const attrs: Record<string, unknown> = { ...fact.attrs }
-  const clean = category.trim()
-  if (clean === '') delete attrs[BOARD_NAMESPACE]
-  else attrs[BOARD_NAMESPACE] = { category: clean }
-  return { ...fact, attrs: Object.keys(attrs).length > 0 ? attrs : null }
-}
 
 /** The single declared question of a flashcard, which is where its tier lives
  *  now that a tier seeds a rating rather than naming a board row. */

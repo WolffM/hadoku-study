@@ -16,11 +16,9 @@ import {
   factIssue,
   isBlank,
   isSimple,
-  readCategory,
   removeSlot,
   renameSlot,
   simpleTier,
-  withCategory,
   withTier
 } from './factEdits'
 
@@ -118,35 +116,11 @@ describe('removing a slot', () => {
   })
 })
 
-describe('the board category', () => {
-  it('round-trips', () => {
-    expect(readCategory(withCategory(worms(), 'Places'))).toBe('Places')
-  })
-
-  it('removes the namespace when cleared, rather than storing a blank', () => {
-    // A blank category renders as a nameless column, and an empty bag is not
-    // the same thing as no bag.
-    const tagged = withCategory(worms(), 'Places')
-    expect(withCategory(tagged, '  ').attrs).toBeNull()
-  })
-
-  it('leaves another game’s namespace alone', () => {
-    const shared: FactInput = { ...worms(), attrs: { nameThatMap: { region: 'Kryta' } } }
-    const tagged = withCategory(shared, 'Places')
-    expect(tagged.attrs?.nameThatMap).toEqual({ region: 'Kryta' })
-    expect(withCategory(tagged, '').attrs).toEqual({ nameThatMap: { region: 'Kryta' } })
-  })
-
-  it('reads a missing or malformed namespace as no category', () => {
-    expect(readCategory(worms())).toBe('')
-    expect(readCategory({ ...worms(), attrs: { board: 'nonsense' } })).toBe('')
-  })
-})
-
 describe('the starting tier', () => {
-  it('lives on the question, not in the board namespace', () => {
+  it('lives on the question', () => {
     // A tier seeds a RATING, and ratings belong to every mode — which is why it
-    // left the board's namespace in migration 0003.
+    // left the board's namespace in 0003, and why the namespace itself is now
+    // gone entirely.
     const tiered = withTier(blankFact(), 4)
     expect(simpleTier(tiered)).toBe(4)
     expect(tiered.attrs).toBeUndefined()

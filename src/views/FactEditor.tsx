@@ -15,7 +15,7 @@
 import { useCallback } from 'react'
 import type { FactInput, QuestionInput } from '../api/types'
 import { KNOWN_SLOTS, defaultQuestions } from '../model/slots'
-import { readCategory, removeSlot, renameSlot, withCategory } from '../model/factEdits'
+import { removeSlot, renameSlot } from '../model/factEdits'
 import { TIERS, pointsFor } from '../games/board'
 
 export interface FactEditorProps {
@@ -57,11 +57,6 @@ export function FactEditor({ fact, onChange, index }: FactEditorProps) {
     const suggestion = KNOWN_SLOTS.find(name => !(name in slots)) ?? `slot${names.length + 1}`
     patch({ slots: { ...slots, [suggestion]: '' } })
   }, [names.length, patch, slots])
-
-  const setCategory = useCallback(
-    (category: string) => onChange(withCategory(fact, category)),
-    [fact, onChange]
-  )
 
   return (
     <div className="fact">
@@ -235,15 +230,6 @@ export function FactEditor({ fact, onChange, index }: FactEditorProps) {
           placeholder="Detail shown after the answer (optional)"
           maxLength={2000}
           aria-label={`Fact ${index + 1} detail`}
-        />
-        <input
-          className="field__input"
-          list="editor-categories"
-          value={readCategory(fact)}
-          onChange={e => setCategory(e.target.value)}
-          placeholder="Board category (optional)"
-          maxLength={40}
-          aria-label={`Fact ${index + 1} board category`}
         />
       </div>
     </div>

@@ -8,9 +8,6 @@ import type { FactRow, ProgressRow, RatingRow, SetRow } from './types.js';
 export const MAX_FACTS_PER_SET = 500;
 export const MAX_FIELD_LENGTH = 2000;
 export const MAX_TITLE_LENGTH = 120;
-/** A board column label. Short because four of them share a phone's width. */
-export const MAX_CATEGORY_LENGTH = 40;
-
 /**
  * Slots on one fact.
  *

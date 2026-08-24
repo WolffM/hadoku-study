@@ -15,7 +15,7 @@
  * with no symptom at all.
  */
 
-import type { QuestionInput } from '../api/types'
+import type { FactInput, QuestionInput } from '../api/types'
 
 /** Slots the server can phrase without a written prompt. */
 export const KNOWN_SLOTS = [
@@ -45,3 +45,21 @@ export const OPEN_SLOTS = new Set(['why', 'how', 'definition'])
  */
 export const defaultQuestions = (slotNames: string[]): QuestionInput[] =>
   slotNames.map(ask => ({ ask }))
+
+/**
+ * Which slots a fact would be asked, for the editor's benefit.
+ *
+ * A MIRROR of the server's expansion, and hint-only — the editor uses it to
+ * say what a set still needs before it can be a board, while it is being
+ * typed and before anything has been saved. The authoritative expansion runs
+ * on the server and comes back as `variants`.
+ *
+ * Same tradeoff as {@link KNOWN_SLOTS}: drift here is cheap and visible (the
+ * hint is slightly wrong for a moment), where drift in a variant KEY would
+ * split a question's rating history with no symptom at all.
+ */
+export function askedSlots(fact: FactInput): string[] {
+  const declared = fact.questions
+  if (!declared || declared.length === 0) return Object.keys(fact.slots)
+  return [...new Set(declared.map(question => question.ask))].filter(ask => ask in fact.slots)
+}

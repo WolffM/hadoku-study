@@ -46,22 +46,47 @@ export const flashcard = (id: string, front = 'front', back = 'back'): StudyFact
     variants: [variant({ prompt: front, answer: back })]
   })
 
-/** The same, sitting on a board at a tier. */
-export const clue = (id: string, category: string, tier: number): StudyFact => ({
-  ...flashcard(id),
-  questions: [{ ask: 'answer', given: ['prompt'], seedTier: tier }],
-  attrs: { board: { category } },
-  variants: [variant({ seedTier: tier })]
-})
+/**
+ * A fact that can fill a board column asking `ask`.
+ *
+ * A board's columns ARE asked slots now, so a fixture for "a clue in the
+ * Places column" is a fact whose question asks `where`. It carries a second
+ * slot because a fact needs something to withhold and something to show.
+ */
+export const asks = (
+  id: string,
+  ask: string,
+  tier = 3,
+  over: { open?: boolean; also?: string[] } = {}
+): StudyFact => {
+  const extra = over.also ?? []
+  const slots: Record<string, string> = { context: `context for ${id}`, [ask]: `${ask} of ${id}` }
+  for (const name of extra) slots[name] = `${name} of ${id}`
+  const asked = [ask, ...extra]
+  return fact({
+    id,
+    slots,
+    questions: asked.map(name => ({ ask: name, seedTier: tier })),
+    variants: asked.map(name =>
+      variant({
+        key: `${name}<>`,
+        ask: name,
+        prompt: `What is the ${name} of ${id}?`,
+        answer: `${name} of ${id}`,
+        seedTier: tier,
+        open: over.open ?? false
+      })
+    )
+  })
+}
 
 /** A fact with real slots, asked several ways — what Phase 3 authoring makes. */
-export function authored(id: string, category?: string): StudyFact {
+export function authored(id: string): StudyFact {
   const slots = { who: 'Luther', what: 'refused to recant', where: 'Worms', when: '1521' }
   return fact({
     id,
     slots,
     questions: [{ ask: 'when' }, { ask: 'where' }],
-    attrs: category === undefined ? null : { board: { category } },
     variants: [
       variant({
         key: 'when<what,where,who>',

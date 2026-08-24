@@ -219,14 +219,6 @@ describe('declared questions', () => {
 });
 
 describe('game attributes round-trip alongside plain facts', () => {
-	it('keeps a typed namespace on the way in', () => {
-		const parsed = CreateSetInputSchema.parse({
-			title: 'Reformation Jeopardy',
-			facts: [{ slots: worms, attrs: { board: { category: 'Places' } } }],
-		});
-		expect(parsed.facts?.[0].attrs?.board).toEqual({ category: 'Places' });
-	});
-
 	it('preserves a namespace this deploy has never heard of', () => {
 		// The whole reason attrs is a JSON column: a game can be prototyped in
 		// the client before the server knows it exists. Stripping unknown
@@ -240,24 +232,17 @@ describe('game attributes round-trip alongside plain facts', () => {
 		expect(parsed.facts?.[0].attrs?.nameThatMap).toEqual({ region: 'Maguuma', zoom: 3 });
 	});
 
-	it('still validates the namespaces it does know', () => {
-		for (const board of [{ category: '' }, {}, { category: 'x'.repeat(200) }]) {
-			const parsed = CreateSetInputSchema.safeParse({
-				title: 'T',
-				facts: [{ slots: { a: '1', b: '2' }, attrs: { board } }],
-			});
-			expect(parsed.success, JSON.stringify(board)).toBe(false);
-		}
-	});
-
-	it('no longer accepts a difficulty here, because it moved to the variant', () => {
-		// 0003 moved it to `seedTier`. Leaving it accepted would let a file put a
-		// tier somewhere nothing reads it, which is worse than a rejection.
-		const parsed = CreateSetInputSchema.safeParse({
+	it('types no namespace at all, because no game reads one', () => {
+		// `board` used to be typed here and held a per-fact category. Board
+		// columns are derived from the slots a set's questions ask now, so the
+		// field had no reader — and a schema describing a field nothing reads is
+		// how a dead feature keeps looking alive. A legacy set still carrying
+		// one round-trips untouched, as any unknown namespace does.
+		const parsed = CreateSetInputSchema.parse({
 			title: 'T',
-			facts: [{ slots: { a: '1', b: '2' }, attrs: { board: { category: 'P', difficulty: 3 } } }],
+			facts: [{ slots: { a: '1', b: '2' }, attrs: { board: { category: 'Places' } } }],
 		});
-		expect(parsed.success).toBe(false);
+		expect(parsed.facts?.[0].attrs?.board).toEqual({ category: 'Places' });
 	});
 
 	it('caps the bag, because unknown namespaces are unvalidated', () => {
