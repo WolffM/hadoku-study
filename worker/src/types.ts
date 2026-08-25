@@ -121,15 +121,20 @@ export interface RatingRow {
 /**
  * A resume bookmark for ONE pass over a set — NOT a scheduling record.
  *
- * v1 is a plain drill: you walk the set, self-grade each card, and the pass
- * ends when the queue empties. This row exists so that a lock screen, a
- * rotate, or picking the phone back up an hour later resumes where you were.
- * It is deleted when the pass completes.
+ * A drill is a plain walk: you take the set's questions in turn, self-grade
+ * each, and the pass ends when the queue empties. This row exists so that a
+ * lock screen, a rotate, or picking the phone back up an hour later resumes
+ * where you were. It is deleted when the pass completes.
  *
- * `results` is a JSON map of cardId -> RESULT STRING, not a boolean. v2 judges
- * typed answers with an LLM and will need a third verdict; a `correct BOOLEAN`
- * column would have to be migrated, a 'got' | 'missed' string only has to gain
- * a member.
+ * `queue` and the keys of `results` are VARIANT ids — `factId:variantKey` —
+ * because a pass walks questions, and two questions over one fact are two
+ * separate things to get right.
+ *
+ * `results` maps to a RESULT STRING rather than a boolean. Grading is
+ * self-reported and stays that way, but a third verdict is a widened union
+ * where a `correct BOOLEAN` column would be a migration — and the same
+ * reasoning governs `attempts.result`, which is the row that actually matters
+ * now.
  */
 export interface ProgressRow {
 	user_id: string;

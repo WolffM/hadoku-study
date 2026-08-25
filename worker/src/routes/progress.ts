@@ -1,11 +1,16 @@
 /**
  * Where you left off in a set.
  *
- * This is a resume bookmark for ONE pass, not a scheduling record. v1 is a
- * plain drill — walk the set, self-grade, done — so there is no ease factor,
- * no interval and no due date here. The row exists so a lock screen, a rotate,
- * or coming back an hour later does not cost you your place, and it is deleted
+ * This is a resume bookmark for ONE pass, not a scheduling record. A drill is
+ * a plain walk — flip, self-grade, done — so there is no ease factor, no
+ * interval and no due date here. The row exists so a lock screen, a rotate, or
+ * coming back an hour later does not cost you your place, and it is deleted
  * the moment the pass completes.
+ *
+ * Scheduling lives in the RATINGS, which decide what a board deals. This and
+ * `attempts` are deliberately different things: a bookmark is one row per
+ * reader, overwritten and then thrown away, while the ledger keeps every
+ * answer forever.
  *
  * Gated on IDENTITY, not on tier. Progress is private data about a set the
  * caller can already read, so the question is only "who is this", never "are

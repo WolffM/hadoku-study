@@ -80,7 +80,8 @@ export const asks = (
   })
 }
 
-/** A fact with real slots, asked several ways — what Phase 3 authoring makes. */
+/** A fact with real slots, asked several ways — what authored content looks
+ *  like, as opposed to a migrated flashcard. */
 export function authored(id: string): StudyFact {
   const slots = { who: 'Luther', what: 'refused to recant', where: 'Worms', when: '1521' }
   return fact({

@@ -1,13 +1,17 @@
 /**
  * The drill loop, as pure state.
  *
- * v1 is a plain pass over a set: walk the cards, flip, self-grade, done. There
- * is no scheduler here — no ease factor, no interval, no due date. A missed
- * card goes to the BACK of this pass's queue and comes round again; the pass
- * ends when the queue empties.
+ * A plain pass over a set: walk its questions, flip, self-grade, done. There is
+ * no scheduler here — no ease factor, no interval, no due date. A missed
+ * question goes to the BACK of this pass's queue and comes round again; the
+ * pass ends when the queue empties.
  *
- * Kept free of React so it can be reasoned about (and, later, tested) on its
- * own — the component below it only renders whatever this returns.
+ * Scheduling lives in the RATING instead, which decides what a board deals and
+ * is written by `state/attempts.ts` — so this file stays a queue and never
+ * grows a second, disagreeing opinion about what is hard.
+ *
+ * Kept free of React so it can be reasoned about on its own — the component
+ * above it only renders whatever this returns.
  */
 
 import { z } from 'zod'

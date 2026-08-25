@@ -1,7 +1,7 @@
 {
 	"name": "@wolffm/study-worker",
 	"version": "1.0.15",
-	"description": "Flashcard creation and spaced study - Worker package",
+	"description": "Study sets, questions and ratings — the API behind @wolffm/study",
 	"type": "module",
 	"repository": {
 		"type": "git",

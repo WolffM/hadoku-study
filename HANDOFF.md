@@ -160,14 +160,16 @@ Slot names are restricted to `[A-Za-z0-9_-]` for the same family of reason: a
 key is `ask<given,given>`, so a slot name containing a comma or an angle
 bracket would produce a key that reads back as a different question.
 
-### What the editor will and will not touch
+### The editor holds one row model and draws it two ways
 
-The row editor represents a **two-slot flashcard** and nothing else. A fact
-with four slots asked three ways is shown read-only and passed through byte for
-byte, because flattening one to fit two text inputs would destroy authoring
-silently, on save, in exactly the sets that had the most work in them. Editing
-rich facts properly is Phase 3; until then the file is their editor, which
-works because the export is the import.
+A row always holds a whole `FactInput`. A two-slot flashcard gets a pair of
+text inputs, because a deck of two hundred of them would be miserable any other
+way; anything richer, or anything the author expands, gets `FactEditor` with
+slots and questions visible. **The split is presentation, never storage** — an
+earlier version kept two row SHAPES and passed rich facts through untouched,
+which was safe but meant the editor could show you a fact it could not let you
+change. A fact two inputs cannot hold is always expanded regardless of the
+toggle, so the toggle can never hide something it cannot show.
 
 ## Difficulty drifts, and there is no player rating
 
@@ -294,6 +296,40 @@ attempt to and no way to tell one anonymous reader from a thousand, so letting
 them move global ratings would be letting an unbounded, unattributable
 population vote. Their board still ranks — by `seedTier`, which is exactly how
 it ranked before ratings existed.
+
+## Handing a set to an agent, and checking what comes back
+
+**Copy for agent** puts the file on the clipboard behind a brief
+(`src/agentBrief.ts`). Every rule in that brief exists because leaving it out
+produced a specific kind of bad output — and most were learned by making the
+mistake here, with full knowledge of the model.
+
+**The API cannot catch a bad set, only a malformed one.** A question whose
+prompt contains its own answer parses, imports and plays; it is just worthless.
+So `src/model/lint.ts` runs over whatever comes back, in the editor, before it
+is saved. Every check in it is a mistake that actually happened while building
+the Reformation set:
+
+- **The prompt gives away its answer.** Measured as a ratio, not a substring,
+  because the leak that happens is a paraphrase: _"What happened to Hus at
+  Constance, despite a promise of safe conduct?"_ answered by _"burned at
+  Constance despite a promise of safe conduct"_. No exact match, no question
+  left. The threshold sits at 50%: the two real leaks scored 86% and 57%, the
+  worst innocent one 29%.
+- **The prompt already said what its `given` shows**, so the same sentence
+  prints twice — once large as the question, once small as context. This one
+  reached production.
+- **A declaration asks a slot the fact does not have.** The server skips it, so
+  a question you wrote simply never appears. No error, one fewer question.
+- Two declarations resolving to the same question; a fact with fewer than two
+  filled slots; an unphraseable slot with no prompt.
+
+It is pure and client-side, and it can be, because none of it needs a variant
+key: an answer is `slots[ask]` and the context is `given ?? every other slot`,
+both of which are in the file.
+
+`boardAdvice` is deliberately separate from the findings — a set can be
+perfectly good and simply not be a board.
 
 ## Where a reader actually sees a rating
 

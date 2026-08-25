@@ -22,8 +22,8 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import type { StudyClient } from '../api/client'
 import type { FactInput, StudySetDetail } from '../api/types'
 import { LEGACY_ANSWER_SLOT, LEGACY_PROMPT_SLOT, SetFileError, parseImport } from '../setFile'
-import type { PlayCard } from '../model/playCards'
-import { KNOWN_SLOTS, askedSlots } from '../model/slots'
+import { KNOWN_SLOTS } from '../model/slots'
+import { boardAdvice, lintSet } from '../model/lint'
 import {
   blankFact,
   cleaned,
@@ -33,7 +33,7 @@ import {
   simpleTier,
   withTier
 } from '../model/factEdits'
-import { TIERS, missingForBoard, pointsFor } from '../games/board'
+import { TIERS, pointsFor } from '../games/board'
 import { FactEditor } from './FactEditor'
 
 export interface EditorProps {
@@ -69,32 +69,13 @@ const toRow = (fact: FactInput): Row => ({
 
 const blankRow = (): Row => toRow(blankFact())
 
-/**
- * Enough of each question for `missingForBoard` to judge the set, before
- * anything has been saved.
- *
- * One preview per ASKED SLOT, because a board's columns are asked slots — a
- * single card per row could not represent a fact that will become four
- * different columns.
- */
 /** Dropped silently on import and on save — everything else with content in
  *  it is kept and reported on. */
 const isBlank = (row: Row): boolean => isFactBlank(row.fact)
 
-const previewCards = (row: Row): PlayCard[] =>
-  askedSlots(row.fact).map(ask => ({
-    id: `${row.key}:${ask}`,
-    factId: row.key,
-    variantKey: ask,
-    ask,
-    front: '',
-    back: '',
-    detail: null,
-    given: [],
-    open: false,
-    seedTier: simpleTier(row.fact) ?? 3,
-    attrs: row.fact.attrs ?? null
-  }))
+/** How many findings to show. A bad import can produce dozens, and a wall of
+ *  them is read as noise rather than as a list of things to fix. */
+const MAX_FINDINGS = 8
 
 export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
   const [title, setTitle] = useState(existing?.title ?? '')
@@ -145,12 +126,19 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
     })
   }, [])
 
-  // What still stands between this set and a playable board. Null when nothing
-  // does — tagging a set should show progress, not a silent threshold.
-  const boardProgress = useMemo(
-    () => missingForBoard(rows.filter(row => !isBlank(row)).flatMap(previewCards)),
+  /**
+   * What is wrong with the content, as opposed to what is wrong with the file.
+   *
+   * The API rejects a malformed set. It cannot reject a well-formed one that
+   * is simply bad — a question whose prompt contains its own answer parses,
+   * imports and plays. This runs on whatever an agent hands back, so a bad
+   * batch is visible before it is saved rather than after it is played.
+   */
+  const report = useMemo(
+    () => lintSet(rows.filter(row => !isBlank(row)).map(row => row.fact)),
     [rows]
   )
+  const advice = useMemo(() => boardAdvice(report), [report])
 
   /**
    * Take content from anywhere — a set file, a raw API response, a spreadsheet
@@ -359,7 +347,27 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
         ))}
       </datalist>
 
-      {boardProgress !== null && <p className="muted editor__imported">{boardProgress}</p>}
+      {report.findings.length > 0 && (
+        <div className="lint">
+          <p className="lint__head">
+            {report.findings.filter(f => f.severity === 'error').length > 0
+              ? 'Worth fixing before you save'
+              : 'Worth a look'}
+          </p>
+          <ul className="lint__list">
+            {report.findings.slice(0, MAX_FINDINGS).map((finding, at) => (
+              <li key={at} className={`lint__item lint__item--${finding.severity}`}>
+                <b>Fact {finding.factIndex + 1}</b> {finding.message}
+              </li>
+            ))}
+          </ul>
+          {report.findings.length > MAX_FINDINGS && (
+            <p className="lint__more">…and {report.findings.length - MAX_FINDINGS} more.</p>
+          )}
+        </div>
+      )}
+
+      {advice !== null && <p className="muted editor__imported">{advice}</p>}
 
       <ul className="editor__rows">
         {rows.map((row, index) => {

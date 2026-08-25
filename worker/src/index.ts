@@ -95,14 +95,23 @@ API expands each one into the QUESTIONS you can ask of it:
 \`\`\`
 
 - **\`ask\`** names the slot that is the ANSWER. Everything else is context.
-- **\`given\`** omitted means every other slot. Naming FEWER is how one fact
-  yields a harder question — and the two rate independently, because the given
-  set is part of the question's identity.
+- **\`given\`** is what gets DRAWN beside the prompt — not a hint about
+  difficulty. A written prompt is usually a complete question, so it usually
+  wants \`"given": []\`; otherwise the same sentence prints twice, once large as
+  the question and once small as context. Omitting \`given\` entirely means
+  every other slot. The given set is part of the question's IDENTITY, so two
+  questions asking one slot with different context rate independently.
 - **\`prompt\`** is how the question reads. Write one. The fallback phrasings are
   deliberately plain, and a set that leans on them sounds like a form.
 - **\`questions\`** omitted means "ask each slot in turn, giving all the others".
 - **\`seedTier\`** (1–5) only SEEDS difficulty. It is not a score, and play moves
   it from there.
+- **Never put the answer in the prompt.** It is easy to do by accident and
+  invisible afterwards, because the question still reads well.
+- **One fact per thing that is true.** Hus burned at Constance in 1415 is ONE
+  fact asked several ways, not a "who said it" fact plus a "what year" fact —
+  splitting it lets a board ask about it twice and halves what each rating
+  knows.
 
 \`who\` / \`what\` / \`where\` / \`when\` / \`why\` / \`how\` / \`quote\` / \`term\` /
 \`definition\` are phrased automatically when no prompt is written; \`why\`, \`how\`
@@ -112,6 +121,8 @@ slot name works and simply needs a \`prompt\`.
 The asked slot is also a BOARD COLUMN: every question answering \`when\` makes up
 "Name that year". A set that asks several kinds of question can be played as a
 board with no tagging at all — which is why nothing here has a category field.
+A full board is 4 columns of 5 and NO FACT IS ASKED TWICE ON ONE BOARD, so a
+column needs five different facts that can answer it.
 
 Responses carry a \`variants\` array per fact, each with a stable \`key\`. Those
 keys are derived here and only here, so read them rather than building them.
@@ -139,9 +150,8 @@ stripped on the way back in — so the exported object is a valid import body
 with no editing. The round trip is three commands:
 
 \`\`\`bash
-# export
-curl -sH "X-User-Key: $KEY" https://hadoku.me/study/api/sets/$ID \\
-  | jq .data.set > set.json
+# export — bare, no envelope to unwrap
+curl -sH "X-User-Key: $KEY" https://hadoku.me/study/api/sets/$ID/file > set.json
 
 # import as a NEW set (add '"published": true' to share it on create)
 curl -sH "X-User-Key: $KEY" -H 'Content-Type: application/json' \\

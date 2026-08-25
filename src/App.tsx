@@ -98,7 +98,7 @@ function AppInner({
                   void save({ shuffle: e.target.checked })
                 }}
               />
-              <span>Shuffle cards when studying</span>
+              <span>Shuffle questions when studying</span>
             </label>
           </AppHeader>
         )}
