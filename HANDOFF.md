@@ -299,7 +299,7 @@ it ranked before ratings existed.
 
 ## Handing a set to an agent, and checking what comes back
 
-**Copy for agent** puts the file on the clipboard behind a brief
+**Copy JSON** puts the file on the clipboard behind a brief
 (`src/agentBrief.ts`). Every rule in that brief exists because leaving it out
 produced a specific kind of bad output — and most were learned by making the
 mistake here, with full knowledge of the model.
@@ -432,7 +432,7 @@ copies should not arrive inside an envelope they have to unwrap first.
 spreadsheet paste, or a v1 export from before facts existed. Tolerant in,
 canonical out.
 
-### Copy for agent
+### The brief that rides with the JSON
 
 The JSON alone is not a brief. `src/agentBrief.ts` is the paragraph that goes
 with it, and every line of it exists because leaving it out produces a specific

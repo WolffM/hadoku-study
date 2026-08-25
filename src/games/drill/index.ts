@@ -18,7 +18,6 @@ import { Drill } from '../../views/Drill'
 export const drillGame: GameDefinition = {
   id: 'drill',
   label: 'Study',
-  blurb: 'Flip each question and grade yourself. Missed ones come round again.',
   availability: set => {
     if (set.facts.length === 0) return { playable: false, blocked: 'This set has no facts yet.' }
     const questions = set.variantCount

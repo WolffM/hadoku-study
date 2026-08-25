@@ -25,14 +25,8 @@ describe('the registry', () => {
     expect(GAMES[0].id).toBe('drill')
   })
 
-  it('gives every game a label and a blurb', () => {
-    // The set page shows these side by side as a CHOICE. A game that ships
-    // without a blurb renders as a bare verb next to a described one, which
-    // makes the reader guess what they are picking.
-    for (const game of GAMES) {
-      expect(game.label.trim(), game.id).not.toBe('')
-      expect(game.blurb.trim(), game.id).not.toBe('')
-    }
+  it('gives every game a label', () => {
+    for (const game of GAMES) expect(game.label.trim(), game.id).not.toBe('')
   })
 })
 

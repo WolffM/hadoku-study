@@ -529,13 +529,6 @@
   color: var(--color-text);
 }
 
-.mode__blurb {
-  font-size: var(--hdk-text-sm);
-  font-weight: 400;
-  line-height: 1.4;
-  color: var(--color-text-secondary);
-}
-
 .mode__summary {
   margin-top: var(--hdk-space-xs);
   font-size: var(--hdk-text-xs);
@@ -577,17 +570,21 @@
   gap: var(--hdk-space-xs);
 }
 
-/* Text-weight, for actions that should be available without competing with the
-   modes above them. */
+/* Secondary, but still unmistakably a button.
+ *
+ * This used to be transparent on both the background AND the border, which
+ * made three real actions read as a row of stray words — "quiet" turned out to
+ * mean "invisible". An outline is enough to say "press me" without competing
+ * with the modes above; the fill and the weight are what rank them. */
 .btn--quiet {
-  background-color: transparent;
-  border-color: transparent;
+  background-color: var(--color-bg-card);
+  border-color: var(--color-border);
   color: var(--color-text-secondary);
-  padding-inline: var(--hdk-space-sm);
 }
 
 .btn--quiet:hover:not(:disabled) {
   background-color: var(--color-bg-hover);
+  border-color: var(--color-text-tertiary);
   color: var(--color-text);
 }
 

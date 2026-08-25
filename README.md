@@ -95,11 +95,12 @@ Read them; never build one.
 
 ## Handing a set to an agent
 
-Open the set and press **Copy for agent**. That puts the file on your clipboard
-with a brief in front of it — the slot vocabulary, what `given` actually does,
+Open the set and press **Copy JSON**. That puts the file on your clipboard with
+a short brief in front of it — the slot vocabulary, what `given` actually does,
 and the rule about keeping fact ids. The brief lives in `src/agentBrief.ts`;
 every paragraph in it is there because leaving it out produced a specific kind
-of bad output.
+of bad output. **Export file** is the same content with no brief, as a
+download.
 
 Paste what comes back into the editor's **Import a file** (or **Paste a list**).
 The editor runs `src/model/lint.ts` over it and lists what it finds:

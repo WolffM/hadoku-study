@@ -42,15 +42,6 @@ export interface GameDefinition {
   /** Button text on the set page. */
   label: string
   /**
-   * One line on what this mode actually does, shown under the label.
-   *
-   * Static, and owned by the game: the set page offers a CHOICE between modes,
-   * and a choice between two bare verbs makes the reader guess what they are
-   * picking. `availability().summary` is the dynamic counterpart — this
-   * describes the mode, that describes this set in it.
-   */
-  blurb: string
-  /**
    * Optional at-a-glance picture of this set in this mode.
    *
    * Here so a game can show its own shape without the set page learning what

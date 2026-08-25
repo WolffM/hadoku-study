@@ -20,7 +20,6 @@ import { buildBoard, missingForBoard } from './model'
 export const boardGame: GameDefinition = {
   id: 'board',
   label: 'Play as board',
-  blurb: 'Four categories dealt from your set. Pick a tier, then score yourself on the reveal.',
   Preview: BoardPreview,
   availability: set => {
     const cards = toPlayCards(set.facts)

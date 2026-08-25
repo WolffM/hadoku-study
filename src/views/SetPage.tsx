@@ -47,7 +47,7 @@ export function SetPage({
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [copiedBrief, setCopiedBrief] = useState(false)
+  const [copiedJson, setCopiedJson] = useState(false)
   /**
    * How the set is going. Null until fetched, and left null for a signed-out
    * reader — who has no ratings at all, so there is nothing to be waiting for.
@@ -174,15 +174,20 @@ export function SetPage({
    * the slot vocabulary, invents its own phrasing conventions, and — worst —
    * drops the fact ids, which silently discards every rating the set has
    * earned. Saying so costs one paragraph.
+   *
+   * The button says "Copy JSON" because that is what it is FOR; the brief
+   * riding in front of it is not worth a longer label. Do not strip it to make
+   * the label literally true — `agentBrief.ts` explains what each paragraph
+   * prevents, and the answer is never "nothing".
    */
-  const copyForAgent = useCallback(() => {
+  const copyJson = useCallback(() => {
     if (!set) return
     client
       .getFile(set.id)
       .then(async file => {
         await navigator.clipboard.writeText(agentBrief(file))
-        setCopiedBrief(true)
-        window.setTimeout(() => setCopiedBrief(false), 2000)
+        setCopiedJson(true)
+        window.setTimeout(() => setCopiedJson(false), 2000)
       })
       .catch(() => setError('Could not copy this set.'))
   }, [client, set])
@@ -322,7 +327,6 @@ export function SetPage({
                 <button type="button" className="mode" onClick={() => onPlay(game.id)}>
                   <span className="mode__text">
                     <span className="mode__name">{game.label}</span>
-                    <span className="mode__blurb">{game.blurb}</span>
                     {summary && <span className="mode__summary">{summary}</span>}
                   </span>
                   {Preview && (
@@ -355,10 +359,10 @@ export function SetPage({
         <button
           type="button"
           className="btn btn--quiet btn--sm"
-          onClick={copyForAgent}
+          onClick={copyJson}
           disabled={set.facts.length === 0}
         >
-          {copiedBrief ? 'Copied for agent' : 'Copy for agent'}
+          {copiedJson ? 'JSON copied' : 'Copy JSON'}
         </button>
         {set.published && (
           <button type="button" className="btn btn--quiet btn--sm" onClick={copyLink}>
