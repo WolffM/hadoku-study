@@ -1,9 +1,14 @@
 /**
  * Who a set can be handed to.
  *
- * The UUID check is not cosmetic: a typo assigns the set to a userId nobody
- * holds a key for, and it becomes unreachable through the API entirely. An
- * admin can still rescue it, but the whole point is not to need rescuing.
+ * A userId is an OPAQUE STRING, not a UUID. This asserted the UUID shape for
+ * one release and it was wrong — `registry.ts` mints a UUID only for records
+ * it creates, so an identity seeded any other way keeps whatever id it was
+ * given, and `hadoku` is a real one. The regex made a legitimate owner
+ * unassignable, which is a worse failure than the typo it was guarding
+ * against.
+ *
+ * What is checked now is what a STORE needs, not what a format implies.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -12,9 +17,15 @@ import { TransferOwnerInputSchema } from './schemas.js';
 const parse = (body: unknown) => TransferOwnerInputSchema.safeParse(body);
 
 describe('naming a recipient', () => {
-	it('takes a real registry userId', () => {
-		const ok = parse({ userId: '2fbe7e55-edb2-49b9-bd15-8c1fbd1b5a90' });
+	it('takes a plain-word userId', () => {
+		// The case the UUID regex refused. This is a real identity.
+		const ok = parse({ userId: 'hadoku' });
 		expect(ok.success).toBe(true);
+		expect(ok.success && ok.data.userId).toBe('hadoku');
+	});
+
+	it('takes a UUID too, since that is what new records get', () => {
+		expect(parse({ userId: '2fbe7e55-edb2-49b9-bd15-8c1fbd1b5a90' }).success).toBe(true);
 	});
 
 	it('takes an empty body, which means "give it to me"', () => {
@@ -25,21 +36,21 @@ describe('naming a recipient', () => {
 		expect(ok.success && ok.data.userId).toBeUndefined();
 	});
 
-	it('refuses anything that is not a UUID', () => {
-		for (const userId of [
-			'',
-			'me',
-			'2fbe7e55edb249b9bd1550a8b9a90',
-			'2fbe7e55-edb2-49b9-bd15-8c1fbd1b5a9', // one short
-			'2fbe7e55-edb2-49b9-bd15-8c1fbd1b5a90x',
-			'  2fbe7e55-edb2-49b9-bd15-8c1fbd1b5a90  ',
-		]) {
+	it('trims, so an id copied with padding still lands on the right owner', () => {
+		const ok = parse({ userId: '  hadoku  ' });
+		expect(ok.success && ok.data.userId).toBe('hadoku');
+	});
+
+	it('refuses what a store cannot use', () => {
+		// Not a format opinion — these are the values that would assign the set
+		// to an owner nobody can authenticate as.
+		for (const userId of ['', '   ', 'two words', 'has\nnewline', 'x'.repeat(200)]) {
 			expect(parse({ userId }).success, JSON.stringify(userId)).toBe(false);
 		}
 	});
 
 	it('says where to find one', () => {
-		const bad = parse({ userId: 'me' });
+		const bad = parse({ userId: 'two words' });
 		expect(bad.success).toBe(false);
 		expect(bad.success === false && JSON.stringify(bad.error.issues)).toContain('whoami');
 	});

@@ -395,28 +395,42 @@ export const RecordAttemptsInputSchema = z
 /**
  * Handing a set to someone else.
  *
- * A userId is NOT a credential — it is the registry's stable per-user UUID,
- * and knowing one grants nothing. So naming a recipient by userId is safe to
- * accept, safe to log, and safe to put in a spec. What makes this endpoint
- * safe is not secrecy about the id; it is that only the set's CURRENT OWNER
- * (or an admin) may call it. You can give a set away. You cannot take one.
+ * A userId is NOT a credential — it is the registry's stable per-user
+ * identifier, and knowing one grants nothing. So naming a recipient by userId
+ * is safe to accept, safe to log, and safe to put in a spec. What makes this
+ * endpoint safe is not secrecy about the id; it is that only the set's CURRENT
+ * OWNER (or an admin) may call it. You can give a set away. You cannot take
+ * one.
  *
- * The UUID shape is enforced because the failure it prevents is unrecoverable
- * without an admin: a typo assigns the set to a userId nobody holds a key for,
- * and it becomes unreachable from the API entirely.
+ * An OPAQUE STRING, not a UUID. This validated the UUID shape for one release
+ * and that was wrong: `registry.ts` mints a UUID only for records it creates
+ * (`existing?.userId ?? crypto.randomUUID()`), so an identity seeded any other
+ * way keeps whatever id it was given — `hadoku` is a real one. Every other
+ * userId in this worker is already a plain string; that regex was the only
+ * place in the codebase asserting a format, and it was asserting the wrong
+ * one, which made a legitimate owner unassignable.
+ *
+ * What is still checked is what a STORE needs rather than what a format
+ * implies: non-empty, bounded, and no whitespace or control characters — so a
+ * pasted line-break or a copied-with-spaces id cannot silently become an owner
+ * nobody can authenticate as.
  */
 export const TransferOwnerInputSchema = z
 	.object({
 		userId: z
 			.string()
-			.regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, {
-				message: 'A userId is the registry UUID — see GET /session/whoami.',
+			.trim()
+			.min(1)
+			.max(MAX_SLOT_NAME_LENGTH * 4)
+			.regex(/^\S+$/, {
+				message:
+					'A userId is the identifier on a registry key — see GET /session/whoami. It cannot contain whitespace.',
 			})
 			.optional()
 			.openapi({
-				example: '2fbe7e55-edb2-49b9-bd15-8c1fbd1b5a90',
+				example: 'hadoku',
 				description:
-					'Who to hand it to. Omit to claim it for the CALLER, which is how an admin adopts a set whose owner no longer holds a key.',
+					'Who to hand it to, by their registry userId — an opaque string, not necessarily a UUID. Omit to claim it for the CALLER, which is how an admin adopts a set whose owner no longer holds a key.',
 			}),
 	})
 	.openapi('TransferOwnerInput');

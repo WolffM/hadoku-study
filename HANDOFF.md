@@ -392,9 +392,8 @@ tier — so the same information arrives without a second key implementation.
 - **Anyone else** gets the same 404 a non-existent set gets, so probing ids
   tells you nothing. There is no claim, no adopt, no takeover.
 
-A **userId is not a credential.** It is the registry's stable per-user UUID
-(`crypto.randomUUID()` in edge-router's registry), and knowing one grants
-nothing at all. That is why naming a recipient by userId is safe to accept,
+A **userId is not a credential.** It is the registry's stable per-user
+identifier, and knowing one grants nothing at all. That is why naming a recipient by userId is safe to accept,
 safe to log and safe to publish in the spec — the security lives in the owner
 check, not in the id being secret. Anyone reasoning about this endpoint should
 start there, because the instinct is to treat the id as sensitive and then
@@ -409,9 +408,19 @@ bearer-shaped", so service is the right ceiling. Two ways to find one:
 - `GET /session/keys/by-repo?repo=owner/name` — the identities behind a repo.
   Admin's `GET /session/admin/keys` is the whole inventory.
 
-The UUID SHAPE is validated for a different reason: a typo strands the set with
-an owner nobody can authenticate as. Admin can rescue it; better not to need
-rescuing.
+A userId is an **opaque string, not a UUID.** This validated the UUID shape for
+one release and that was wrong. `registry.ts` mints a UUID only for records it
+CREATES — `existing?.userId ?? crypto.randomUUID()` — so an identity seeded any
+other way keeps whatever id it was given, and `hadoku` is a real one. That
+regex was the only place in the codebase asserting a userId format, and it was
+asserting the wrong one; every other `userId` here is a plain string. The
+result was that a legitimate owner could not be assigned at all, which is a
+worse failure than the typo it was guarding against.
+
+What is validated now is what a STORE needs rather than what a format implies:
+non-empty, bounded, no whitespace. That still stops a pasted line-break from
+becoming an owner nobody can authenticate as, and admin remains the rescue for
+one that does.
 
 **Nothing else moves with ownership.** Facts keep their ids, and ratings,
 attempts and saved progress are all keyed on the READER — so transferring a set

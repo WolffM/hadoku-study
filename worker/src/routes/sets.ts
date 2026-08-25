@@ -639,7 +639,7 @@ const transferOwnerRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Hand a set to another user',
 	description:
-		'Owner only, or admin. You can GIVE a set away; you cannot take one — a caller who is neither the current owner nor an admin gets the same 404 as a set that does not exist, so probing reveals nothing. Name the recipient by their registry userId (`GET /session/whoami`); a userId is an identifier, not a credential, so it is safe to send and safe to log. Omit it to claim the set for yourself, which is how an admin adopts a set whose owner no longer holds a key. Nothing else moves: facts keep their ids, and ratings, attempts and saved progress are keyed on the READER rather than on the owner, so no one loses anything.',
+		'Owner only, or admin. You can GIVE a set away; you cannot take one — a caller who is neither the current owner nor an admin gets the same 404 as a set that does not exist, so probing reveals nothing. Name the recipient by their registry userId (`GET /session/whoami`) — an opaque string, not necessarily a UUID. A userId is an identifier, not a credential, so it is safe to send and safe to log. Omit it to claim the set for yourself, which is how an admin adopts a set whose owner no longer holds a key. Nothing else moves: facts keep their ids, and ratings, attempts and saved progress are keyed on the READER rather than on the owner, so no one loses anything.',
 	security: AUTHENTICATED,
 	request: {
 		params: z.object({ id: z.string() }),

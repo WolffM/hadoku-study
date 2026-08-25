@@ -163,10 +163,11 @@ curl -sX PUT -H "X-User-Key: $KEY" --json @set.json $API/sets/$ID
 
 ```bash
 # hand a set to someone else. Owner only, or admin — you can GIVE a set away,
-# you cannot take one. A userId is an identifier, not a credential:
+# you cannot take one. A userId is an opaque identifier, not a credential and
+# not necessarily a UUID:
 #   GET /session/whoami                        -> your own
 #   GET /session/keys/by-repo?repo=owner/name  -> a repo's identities (service tier)
-curl -sX POST -H "X-User-Key: $KEY" --json '{"userId":"<uuid>"}' \
+curl -sX POST -H "X-User-Key: $KEY" --json '{"userId":"hadoku"}' \
   $API/sets/$ID/owner
 
 # with an admin key, omit the id to claim a set for yourself outright
