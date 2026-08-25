@@ -549,14 +549,6 @@
   color: var(--color-text);
 }
 
-.mode__summary {
-  margin-top: var(--hdk-space-xs);
-  font-size: var(--hdk-text-xs);
-  font-weight: 400;
-  color: var(--color-text-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-
 .mode__preview {
   flex-shrink: 0;
 }

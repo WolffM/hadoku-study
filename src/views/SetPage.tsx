@@ -406,7 +406,7 @@ export function SetPage({
         <p className="muted">This set has no cards yet.</p>
       ) : (
         <ul className="mode-list">
-          {playable.map(({ game, summary }) => {
+          {playable.map(({ game }) => {
             const { Preview } = game
             return (
               <li key={game.id}>
@@ -417,7 +417,6 @@ export function SetPage({
                 <button type="button" className="mode" onClick={() => onPlay(game.id)}>
                   <span className="mode__text">
                     <span className="mode__name">{game.label}</span>
-                    {summary && <span className="mode__summary">{summary}</span>}
                   </span>
                   {Preview && (
                     <span className="mode__preview">

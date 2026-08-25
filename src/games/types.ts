@@ -29,10 +29,15 @@ export interface GameProps {
 
 export interface GameAvailability {
   playable: boolean
-  /** A short line under the button — what you are about to play. Omitted when
-   *  there is nothing worth saying. */
-  summary?: string
-  /** Why it cannot be played, when that is worth telling the author. */
+  /**
+   * Why it cannot be played, when that is worth telling the author.
+   *
+   * The only prose a game gets. There used to be a `blurb` describing the mode
+   * and a `summary` counting the set, and both were removed for the same
+   * reason: the page already says what the set holds, directly above, and a
+   * button repeating it is the interface talking about itself. A mode says
+   * what it is called. That is the whole tile.
+   */
   blocked?: string
 }
 

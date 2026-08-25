@@ -61,37 +61,4 @@ describe('availability is decided from the content', () => {
     const available = GAMES.filter(g => g.availability(detailSet([other])).playable).map(g => g.id)
     expect(available).toEqual(['drill'])
   })
-
-  it('summarises what you are about to play', () => {
-    // Each column has one fact, so each takes row 1 and is worth 100 —
-    // whatever seed tier its author gave it. The row is a RANK now, not a
-    // stored property, which is exactly what lets a board respond to play.
-    const set = detailSet([asks('a', 'when', 2), asks('b', 'who', 4)])
-    const summary = findGame('board')?.availability(set).summary
-    expect(summary).toContain('2 categories')
-    expect(summary).toContain('200 points')
-  })
-
-  it('scores a full five-row column at the familiar total', () => {
-    const five = [1, 2, 3, 4, 5].map(tier => asks(`c${tier}`, 'when', tier))
-    const withSecond = [...five, asks('other', 'who')]
-    expect(findGame('board')?.availability(detailSet(withSecond)).summary).toContain('1600 points')
-  })
-
-  it('counts questions rather than facts when the drill offers a set', () => {
-    // A fact asked twice is two things to get right. Reporting the fact count
-    // would understate every authored set by exactly the amount of authoring
-    // that went into it.
-    const summary = findGame('drill')?.availability(detailSet([authored('a')])).summary
-    expect(summary).toContain('2 questions')
-    expect(summary).toContain('1 facts')
-  })
-
-  it('drops the fact count when it says nothing new', () => {
-    // A set imported straight off v1 has one question per fact, and "25
-    // questions from 25 facts" reads as the system explaining itself rather
-    // than telling you anything about the set.
-    const summary = findGame('drill')?.availability(detailSet([flashcard('a')])).summary
-    expect(summary).toBe('1 question')
-  })
 })

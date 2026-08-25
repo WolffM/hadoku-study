@@ -27,11 +27,7 @@ export const boardGame: GameDefinition = {
     if (board.clueCount === 0) {
       return { playable: false, blocked: missingForBoard(cards) ?? undefined }
     }
-    const columns = board.columns.length
-    return {
-      playable: true,
-      summary: `${columns} ${columns === 1 ? 'category' : 'categories'} · ${board.clueCount} clues · ${board.maxScore} points`
-    }
+    return { playable: true }
   },
   Component: Board
 }
