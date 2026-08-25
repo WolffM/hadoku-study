@@ -14,12 +14,14 @@ import {
 	createdWrapped,
 	notFoundWrapped,
 	okWrapped,
+	tierAtLeast,
 	type HadokuAuthContext,
 } from '@wolffm/worker-utils';
 import {
 	listFacts,
 	listOwnedSets,
 	listPublishedSets,
+	loadSetById,
 	loadSetForRead,
 	loadSetForWrite,
 	newId,
@@ -35,6 +37,7 @@ import {
 	SetResponseSchema,
 	SetFileSchema,
 	SetsResponseSchema,
+	TransferOwnerInputSchema,
 	UpdateSetInputSchema,
 	type FactInput,
 } from '../schemas.js';
@@ -623,6 +626,87 @@ app.openapi(replaceSetRoute, async (c) => {
 			stored,
 			writer.userId
 		),
+	});
+});
+
+// ============================================================================
+// POST /sets/:id/owner — hand a set to someone else
+// ============================================================================
+
+const transferOwnerRoute = createRoute({
+	method: 'post',
+	path: '/sets/{id}/owner',
+	tags: ['Sets'],
+	summary: 'Hand a set to another user',
+	description:
+		'Owner only, or admin. You can GIVE a set away; you cannot take one — a caller who is neither the current owner nor an admin gets the same 404 as a set that does not exist, so probing reveals nothing. Name the recipient by their registry userId (`GET /session/whoami`); a userId is an identifier, not a credential, so it is safe to send and safe to log. Omit it to claim the set for yourself, which is how an admin adopts a set whose owner no longer holds a key. Nothing else moves: facts keep their ids, and ratings, attempts and saved progress are keyed on the READER rather than on the owner, so no one loses anything.',
+	security: AUTHENTICATED,
+	request: {
+		params: z.object({ id: z.string() }),
+		body: {
+			content: { 'application/json': { schema: TransferOwnerInputSchema } },
+			required: true,
+		},
+	},
+	responses: {
+		200: {
+			description: 'Handed over',
+			content: { 'application/json': { schema: SetResponseSchema } },
+		},
+		403: {
+			description: 'Not signed in, or below friend tier',
+			content: { 'application/json': { schema: ErrorResponseSchema } },
+		},
+		404: {
+			description: 'No such set — or not yours, and you are not an admin',
+			content: { 'application/json': { schema: ErrorResponseSchema } },
+		},
+	},
+});
+
+app.openapi(transferOwnerRoute, async (c) => {
+	const writer = resolveWriter(c);
+	if (!writer.ok)
+		return c.json({ success: false, error: 'Forbidden', message: writer.message }, 403);
+
+	const { id } = c.req.valid('param');
+	const { userId } = c.req.valid('json');
+	const db = c.env.STUDY_DB;
+
+	// An admin may move any set — the escape hatch for one assigned to a userId
+	// nobody holds a key for, which is otherwise unreachable through the API.
+	// Everyone else is held to the same owner check as any other write, which
+	// is what makes this a way to GIVE rather than a way to take.
+	const admin = tierAtLeast(c.get('authContext'), 'admin');
+	const row = admin ? await loadSetById(db, id) : await loadSetForWrite(db, id, writer.userId);
+	if (!row) return notFoundWrapped(c, 'Set');
+
+	const nextOwner = userId ?? writer.userId;
+	const now = Date.now();
+
+	if (nextOwner !== row.owner_user_id) {
+		await db
+			.prepare(`UPDATE sets SET owner_user_id = ?1, updated_at = ?2 WHERE id = ?3`)
+			.bind(nextOwner, now, id)
+			.run();
+	}
+
+	const count = await db
+		.prepare(`SELECT COUNT(*) AS n FROM facts WHERE set_id = ?1`)
+		.bind(id)
+		.first<{ n: number }>();
+
+	// Worth being able to find later: it is the one change that alters who may
+	// edit a set, and the only one that cannot be undone by its new owner
+	// without the old one's cooperation.
+	setEvent('owner-changed', writer, id, {
+		from: row.owner_user_id,
+		to: nextOwner,
+		byAdmin: admin && row.owner_user_id !== writer.userId,
+	});
+
+	return okWrapped(c, {
+		set: toSetJson({ ...row, owner_user_id: nextOwner, updated_at: now }, count?.n ?? 0, nextOwner),
 	});
 });
 

@@ -381,6 +381,46 @@ deriving a variant key, which is server-only by design. The standing panel
 reads resolved variants instead, which already carry both the key and the seed
 tier — so the same information arrives without a second key implementation.
 
+## Ownership can be GIVEN, never taken
+
+`owner_user_id` is written on create and moved by exactly one route:
+`POST /sets/{id}/owner`. The asymmetry is the whole design.
+
+- **The current owner** may hand a set to any userId.
+- **An admin** may move any set — the escape hatch for one assigned to a userId
+  nobody holds a key for, which is otherwise unreachable through the API.
+- **Anyone else** gets the same 404 a non-existent set gets, so probing ids
+  tells you nothing. There is no claim, no adopt, no takeover.
+
+A **userId is not a credential.** It is the registry's stable per-user UUID
+(`crypto.randomUUID()` in edge-router's registry), and knowing one grants
+nothing at all. That is why naming a recipient by userId is safe to accept,
+safe to log and safe to publish in the spec — the security lives in the owner
+check, not in the id being secret. Anyone reasoning about this endpoint should
+start there, because the instinct is to treat the id as sensitive and then
+build the wrong protections around it.
+
+The platform already settled this. `GET /session/keys/by-repo` hands out
+`userId` + name + tier at **service** tier, deliberately not admin, with the
+reasoning spelled out in `key-admin.ts`: the response carries "nothing
+bearer-shaped", so service is the right ceiling. Two ways to find one:
+
+- `GET /session/whoami` with your own key — your own id.
+- `GET /session/keys/by-repo?repo=owner/name` — the identities behind a repo.
+  Admin's `GET /session/admin/keys` is the whole inventory.
+
+The UUID SHAPE is validated for a different reason: a typo strands the set with
+an owner nobody can authenticate as. Admin can rescue it; better not to need
+rescuing.
+
+**Nothing else moves with ownership.** Facts keep their ids, and ratings,
+attempts and saved progress are all keyed on the READER — so transferring a set
+neither carries anyone's history to the new owner nor takes it from the old
+one. `loadSetById` is the only loader in `db.ts` that ignores who is asking; it
+is admin-only and kept as its own function rather than a flag on
+`loadSetForWrite`, because a boolean that turns an access check off is a
+boolean somebody eventually passes by accident.
+
 ## A set is one file, and that is load-bearing
 
 Sets move between the app, a script and an agent as a single JSON document, and

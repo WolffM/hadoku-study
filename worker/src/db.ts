@@ -133,6 +133,20 @@ export async function loadSetForWrite(
 	return row ?? null;
 }
 
+/**
+ * Load a set by id ALONE, ignoring who is asking.
+ *
+ * Admin-only, and the only function here that does not answer "may this caller
+ * see it" — every other loader folds visibility into its WHERE clause on
+ * purpose. Kept separate rather than adding a flag to `loadSetForWrite`,
+ * because a boolean that turns an access check off is a boolean somebody
+ * eventually passes by accident.
+ */
+export async function loadSetById(db: D1Database, setId: string): Promise<SetRow | null> {
+	const row = await db.prepare(`SELECT * FROM sets WHERE id = ?1`).bind(setId).first<SetRow>();
+	return row ?? null;
+}
+
 export async function listFacts(db: D1Database, setId: string): Promise<FactRow[]> {
 	const res = await db
 		.prepare(`SELECT * FROM facts WHERE set_id = ?1 ORDER BY position ASC`)

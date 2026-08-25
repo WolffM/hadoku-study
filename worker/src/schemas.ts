@@ -392,6 +392,35 @@ export const RecordAttemptsInputSchema = z
 	})
 	.openapi('RecordAttemptsInput');
 
+/**
+ * Handing a set to someone else.
+ *
+ * A userId is NOT a credential — it is the registry's stable per-user UUID,
+ * and knowing one grants nothing. So naming a recipient by userId is safe to
+ * accept, safe to log, and safe to put in a spec. What makes this endpoint
+ * safe is not secrecy about the id; it is that only the set's CURRENT OWNER
+ * (or an admin) may call it. You can give a set away. You cannot take one.
+ *
+ * The UUID shape is enforced because the failure it prevents is unrecoverable
+ * without an admin: a typo assigns the set to a userId nobody holds a key for,
+ * and it becomes unreachable from the API entirely.
+ */
+export const TransferOwnerInputSchema = z
+	.object({
+		userId: z
+			.string()
+			.regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, {
+				message: 'A userId is the registry UUID — see GET /session/whoami.',
+			})
+			.optional()
+			.openapi({
+				example: '2fbe7e55-edb2-49b9-bd15-8c1fbd1b5a90',
+				description:
+					'Who to hand it to. Omit to claim it for the CALLER, which is how an admin adopts a set whose owner no longer holds a key.',
+			}),
+	})
+	.openapi('TransferOwnerInput');
+
 export const PutProgressInputSchema = z
 	.object({
 		queue: z.array(z.string()).max(MAX_FACTS_PER_SET * MAX_QUESTIONS_PER_FACT),

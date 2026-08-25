@@ -92,6 +92,15 @@ describe('the routes agents need', () => {
 		expect(Object.keys(doc.paths['/study/api/sets/{id}/attempts'] ?? {})).toEqual(['post']);
 	});
 
+	it('exposes handing a set over, and only as a POST', () => {
+		// A userId is an identifier, not a credential, so naming a recipient is
+		// safe. What makes it safe is the owner check in the handler — this only
+		// asserts the route is mounted and shaped as a deliberate action rather
+		// than something that can ride along with a rename.
+		expect(Object.keys(doc.paths['/study/api/sets/{id}/owner'] ?? {})).toEqual(['post']);
+		expect(doc.components?.schemas?.TransferOwnerInput).toBeDefined();
+	});
+
 	it('publishes the rating shape, not just the routes', () => {
 		// An agent reading the spec has to be able to see what `global` and
 		// `local` mean without reading this repo.

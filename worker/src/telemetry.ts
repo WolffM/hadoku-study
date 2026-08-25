@@ -44,7 +44,7 @@ export interface Actor {
  * count creates without parsing a context field.
  */
 export function setEvent(
-	verb: 'created' | 'replaced' | 'updated' | 'deleted' | 'cards-replaced',
+	verb: 'created' | 'replaced' | 'updated' | 'deleted' | 'owner-changed',
 	actor: Actor,
 	setId: string,
 	context: Record<string, unknown> = {}

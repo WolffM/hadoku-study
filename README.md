@@ -161,6 +161,18 @@ curl -sX PUT -H "X-User-Key: $KEY" --json @set.json $API/sets/$ID
 `PATCH /sets/:id` is the partial alternative — rename, re-describe, or flip
 `published` without touching content.
 
+```bash
+# hand a set to someone else. Owner only, or admin — you can GIVE a set away,
+# you cannot take one. A userId is an identifier, not a credential:
+#   GET /session/whoami                        -> your own
+#   GET /session/keys/by-repo?repo=owner/name  -> a repo's identities (service tier)
+curl -sX POST -H "X-User-Key: $KEY" --json '{"userId":"<uuid>"}' \
+  $API/sets/$ID/owner
+
+# with an admin key, omit the id to claim a set for yourself outright
+curl -sX POST -H "X-User-Key: $ADMIN_KEY" --json '{}' $API/sets/$ID/owner
+```
+
 Ratings live behind two more routes, both gated on identity rather than tier:
 `GET /sets/:id/ratings` says how every question stands, and
 `POST /sets/:id/attempts` records answers and returns what they moved.
