@@ -7,13 +7,16 @@
  * how that is paid for.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, type StudyClient } from '../api/client'
 import type { QuestionRating, StudySetDetail } from '../api/types'
 import { toPlayCards } from '../model/playCards'
 import { Standing } from '../components/Standing'
-import { setFileName } from '../setFile'
+import { SetFileError, parseImport, setFileName } from '../setFile'
 import { agentBrief } from '../agentBrief'
+import { diffSet, type SetDiff } from '../model/diff'
+import { lintSet, type SetReport } from '../model/lint'
+import { UploadReview } from '../components/UploadReview'
 import { GAMES, findGame } from '../games/registry'
 import { Editor } from './Editor'
 
@@ -53,6 +56,24 @@ export function SetPage({
    * reader — who has no ratings at all, so there is nothing to be waiting for.
    */
   const [ratings, setRatings] = useState<QuestionRating[] | null>(null)
+  /**
+   * An upload waiting to be confirmed.
+   *
+   * Parsed, linted and diffed BEFORE anything is sent — a PUT replaces content
+   * wholesale, so the only place a person can see the difference between "the
+   * new version" and "delete eleven facts" is here, in front of the button.
+   */
+  const [pending, setPending] = useState<{
+    facts: Parameters<typeof diffSet>[1]['facts']
+    title?: string
+    description?: string | null
+    diff: SetDiff
+    report: SetReport
+  } | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [uploadText, setUploadText] = useState('')
+  const uploadInput = useRef<HTMLInputElement>(null)
   // Deleting takes a set, its cards and every reader's saved place with it,
   // and there is no undo. Two taps, not a modal — a confirm dialog on a phone
   // is a bigger interruption than the action warrants.
@@ -97,6 +118,75 @@ export function SetPage({
       cancelled = true
     }
   }, [client, setId, syncEnabled, playing])
+
+  /**
+   * Read an uploaded set and work out what it would do — without doing it.
+   *
+   * Everything the editor's import accepts is accepted here: a set file, a raw
+   * API response, a bare array, a v1 export. What differs is the destination —
+   * this REPLACES the set rather than appending to a draft, so it stops and
+   * shows its working.
+   */
+  const review = useCallback(
+    (text: string) => {
+      if (!set) return
+      let parsed
+      try {
+        parsed = parseImport(text)
+      } catch (err: unknown) {
+        setError(err instanceof SetFileError ? err.message : 'Could not read that as a set.')
+        return
+      }
+      setError(null)
+      setUploadOpen(false)
+      setUploadText('')
+      setPending({
+        facts: parsed.facts,
+        title: parsed.title,
+        description: parsed.description,
+        diff: diffSet(set, parsed),
+        report: lintSet(parsed.facts)
+      })
+    },
+    [set]
+  )
+
+  const uploadFile = useCallback(
+    (file: File | undefined) => {
+      if (!file) return
+      file
+        .text()
+        .then(review)
+        .catch(() => setError('Could not read that file.'))
+      // Cleared so choosing the SAME file twice fires a change event the second
+      // time — otherwise a rejected upload cannot be retried without picking a
+      // different file first.
+      if (uploadInput.current) uploadInput.current.value = ''
+    },
+    [review]
+  )
+
+  const confirmUpload = useCallback(() => {
+    if (!set || !pending) return
+    setUploading(true)
+    client
+      .replaceSet(set.id, {
+        title: pending.title ?? set.title,
+        // Undefined means the file did not mention it, which must not be read
+        // as "clear it".
+        description: pending.description === undefined ? set.description : pending.description,
+        facts: pending.facts
+      })
+      .then(updated => {
+        setSet(updated)
+        setPending(null)
+        setUploading(false)
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Could not save the set')
+        setUploading(false)
+      })
+  }, [client, pending, set])
 
   const togglePublished = useCallback(() => {
     if (!set) return
@@ -371,6 +461,60 @@ export function SetPage({
         )}
       </div>
 
+      {set.isOwner && pending !== null && (
+        <UploadReview
+          diff={pending.diff}
+          report={pending.report}
+          saving={uploading}
+          onConfirm={confirmUpload}
+          onCancel={() => setPending(null)}
+        />
+      )}
+
+      {set.isOwner && uploadOpen && pending === null && (
+        <div className="upload">
+          <label className="field">
+            <span className="field__label">
+              Paste a set — what an agent handed back, an exported file, or a raw API response
+            </span>
+            <textarea
+              className="field__input field__input--area"
+              rows={6}
+              value={uploadText}
+              onChange={e => setUploadText(e.target.value)}
+              placeholder='{ "title": …, "facts": [ … ] }'
+            />
+          </label>
+          <div className="upload__actions">
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => uploadInput.current?.click()}
+            >
+              Choose a file
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary btn--sm"
+              onClick={() => review(uploadText)}
+              disabled={uploadText.trim() === ''}
+            >
+              Review changes
+            </button>
+          </div>
+          {/* `hidden`, not clipped: the button above IS the accessible control,
+              so leaving this in the tab order would offer a second unlabelled
+              "Choose File" beside it. */}
+          <input
+            ref={uploadInput}
+            type="file"
+            hidden
+            accept=".json,application/json,text/plain"
+            onChange={e => uploadFile(e.target.files?.[0])}
+          />
+        </div>
+      )}
+
       {set.isOwner && (
         <div className="set-page__owner">
           <button
@@ -379,7 +523,16 @@ export function SetPage({
             onClick={() => setEditing(true)}
             disabled={busy}
           >
-            Edit cards
+            Edit set
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={() => setUploadOpen(open => !open)}
+            disabled={busy}
+            aria-expanded={uploadOpen}
+          >
+            {uploadOpen ? 'Close upload' : 'Upload JSON'}
           </button>
           <button
             type="button"

@@ -729,6 +729,46 @@
   align-items: start;
 }
 
+/* A rich fact, closed. Shows what it holds so the list can be scanned, and
+   opens on click — the whole row is the target, not a small chevron. */
+.editor__summary {
+  grid-area: rich;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: start;
+  text-align: left;
+  min-width: 0;
+  padding: var(--hdk-space-sm) var(--hdk-space-md);
+  background-color: var(--color-bg-alt);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--hdk-radius);
+  cursor: pointer;
+  font-family: var(--font-family);
+  min-height: 2.75rem;
+}
+
+.editor__summary:hover {
+  border-color: var(--color-border);
+  background-color: var(--color-bg-hover);
+}
+
+.editor__summary:focus-visible {
+  outline: none;
+  box-shadow: var(--hdk-shadow-focus);
+}
+
+.editor__summary-name {
+  font-size: var(--hdk-text-sm);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.editor__summary-meta {
+  font-size: var(--hdk-text-xs);
+  color: var(--color-text-tertiary);
+}
+
 .editor__rich {
   grid-area: rich;
   display: flex;
@@ -739,6 +779,147 @@
   border: 1px solid var(--color-border-light);
   border-radius: var(--hdk-radius);
   min-width: 0;
+}
+
+/* ---------- uploading a set over the top of this one ---------- */
+
+.upload {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-sm);
+  padding: var(--hdk-space-md);
+  background-color: var(--color-bg-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hdk-radius);
+}
+
+.upload__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hdk-space-sm);
+}
+
+/* The review is a decision, so it gets a card of its own rather than sitting
+   in the page's flow like a notice. */
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-sm);
+  padding: var(--hdk-space-lg) var(--hdk-space-md);
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hdk-radius);
+}
+
+.review__title {
+  margin: 0;
+  font-size: var(--hdk-text-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.review__totals {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.review__sep {
+  padding-inline: var(--hdk-space-sm);
+  color: var(--color-text-tertiary);
+}
+
+/* The two permanent, invisible-in-the-JSON losses. Tinted rather than filled
+   so it reads as a warning to weigh, not an error that already happened —
+   and paired with its ON token, never accent-as-text on a plain surface. */
+.review__alarm {
+  margin: 0;
+  padding: var(--hdk-space-sm) var(--hdk-space-md);
+  background-color: var(--color-danger-bg);
+  color: var(--color-on-danger-bg);
+  border-radius: var(--hdk-radius-sm);
+  font-size: var(--hdk-text-sm);
+  line-height: 1.5;
+}
+
+.review__block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-xs);
+  padding-top: var(--hdk-space-sm);
+  border-top: 1px solid var(--color-border-light);
+}
+
+.review__head {
+  margin: 0;
+  font-size: var(--hdk-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.review__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hdk-space-xs);
+  /* A big upload is a long list, and the confirm buttons have to stay
+     reachable without scrolling past all of it. */
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.review__item {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0 var(--hdk-space-sm);
+  align-items: baseline;
+  font-size: var(--hdk-text-sm);
+  color: var(--color-text-secondary);
+  padding-left: var(--hdk-space-sm);
+  border-left: 2px solid var(--color-border);
+}
+
+.review__mark {
+  font-size: var(--hdk-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+}
+
+.review__name {
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.review__note {
+  grid-column: 2;
+  font-size: var(--hdk-text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.review__item--remove,
+.review__item--error {
+  border-left-color: var(--color-danger);
+}
+
+.review__item--add {
+  border-left-color: var(--color-success);
+}
+
+.review__foot {
+  margin: 0;
+  font-size: var(--hdk-text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.review__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hdk-space-sm);
+  padding-top: var(--hdk-space-sm);
+  border-top: 1px solid var(--color-border-light);
 }
 
 /* ---------- what is wrong with the content ---------- */

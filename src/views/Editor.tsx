@@ -373,9 +373,18 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
         {rows.map((row, index) => {
           // A fact two inputs cannot hold is always expanded, whatever the flag
           // says — the flag can never hide something it cannot show.
-          const expanded = row.expanded || !isSimple(row.fact)
+          // A rich fact used to be forced open, which turned a 22-fact set into
+          // a wall nobody could scan. Collapsed it shows a SUMMARY — what it
+          // holds and how many ways it is asked — so it is visible without
+          // being hidden, and one tap opens the real editor.
+          const simple = isSimple(row.fact)
+          const expanded = row.expanded
+          const slotNames = Object.keys(row.fact.slots)
           return (
-            <li key={row.key} className={`editor__row${expanded ? ' editor__row--rich' : ''}`}>
+            <li
+              key={row.key}
+              className={`editor__row${expanded || !simple ? ' editor__row--rich' : ''}`}
+            >
               <span className="editor__row-num" aria-hidden="true">
                 {index + 1}
               </span>
@@ -388,6 +397,22 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
                     onChange={fact => patchFact(row.key, fact)}
                   />
                 </div>
+              ) : !simple ? (
+                <button
+                  type="button"
+                  className="editor__summary"
+                  onClick={() => toggleExpanded(row.key)}
+                  aria-expanded={false}
+                >
+                  <span className="editor__summary-name">
+                    {Object.values(row.fact.slots).find(v => v.trim() !== '') ?? '(empty)'}
+                  </span>
+                  <span className="editor__summary-meta">
+                    {slotNames.join(' · ')}
+                    {' — '}
+                    {row.fact.questions?.length ?? slotNames.length} questions
+                  </span>
+                </button>
               ) : (
                 <>
                   <input
@@ -418,18 +443,22 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
               )}
 
               <div className="editor__row-tools">
-                {isSimple(row.fact) && (
-                  <button
-                    type="button"
-                    className="btn btn--ghost btn--icon"
-                    onClick={() => toggleExpanded(row.key)}
-                    aria-expanded={expanded}
-                    aria-label={`${expanded ? 'Collapse' : 'Expand'} fact ${index + 1}`}
-                    title={expanded ? 'Collapse' : 'Add slots and questions'}
-                  >
-                    {expanded ? '⌃' : '⌄'}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--icon"
+                  onClick={() => toggleExpanded(row.key)}
+                  aria-expanded={expanded}
+                  aria-label={`${expanded ? 'Collapse' : 'Expand'} fact ${index + 1}`}
+                  title={
+                    expanded
+                      ? 'Collapse'
+                      : simple
+                        ? 'Add slots and questions'
+                        : 'Edit slots and questions'
+                  }
+                >
+                  {expanded ? '⌃' : '⌄'}
+                </button>
                 <button
                   type="button"
                   className="btn btn--ghost btn--icon"
