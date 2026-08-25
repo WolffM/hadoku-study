@@ -1,6 +1,6 @@
 {
   "name": "@wolffm/study",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "description": "Study sets that generate their own questions, with ratings that drift as you play",
   "type": "module",
   "packageManager": "pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1",
@@ -45,7 +45,7 @@
     "react-dom": "^19.0.0"
   },
   "dependencies": {
-    "@wolffm/prefs-client": "^1.0.8",
+    "@wolffm/prefs-client": "^1.0.9",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -55,7 +55,7 @@
     "@typescript-eslint/eslint-plugin": "^8.46.4",
     "@typescript-eslint/parser": "^8.46.4",
     "@vitejs/plugin-react": "^5.1.0",
-    "@wolffm/logger": "^1.3.2",
+    "@wolffm/logger": "^1.3.3",
     "@wolffm/task-ui-components": "^4.7.3",
     "@wolffm/themes": "^5.7.8",
     "eslint": "^9.39.1",
