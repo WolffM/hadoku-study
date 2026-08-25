@@ -201,6 +201,26 @@
   padding: var(--hdk-space-xs) var(--hdk-space-sm);
 }
 
+/*
+ * A small button should be as tall as a small button.
+ *
+ * `.btn` sets a 44px `min-height` because that is the floor a THUMB needs, and
+ * `.btn--sm` shrinks the text to 12px without touching it — so a quiet action
+ * rendered at 64x44 with 2px of padding, the text floating in a void at 3.7x
+ * its own height. Invisible while these buttons had no border; obvious the
+ * moment they got one.
+ *
+ * The floor is a touch rule, so it is relaxed only where the pointer is fine
+ * and padding decides the height instead: 32px, 2.7x the text. A device that
+ * does not match keeps the 44px target, which is the safe direction to fail.
+ */
+@media (pointer: fine) {
+  .btn--sm {
+    min-height: 0;
+    padding: var(--hdk-space-md) var(--hdk-space-lg);
+  }
+}
+
 .btn--lg {
   font-size: var(--hdk-text-base);
   padding: var(--hdk-space-md) var(--hdk-space-lg);
