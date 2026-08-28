@@ -17,6 +17,7 @@ import {
 	tierAtLeast,
 	type HadokuAuthContext,
 } from '@wolffm/worker-utils';
+import { isIdentityError, resolveGrantee } from '@wolffm/worker-utils/identity';
 import {
 	listFacts,
 	listOwnedSets,
@@ -38,6 +39,7 @@ import {
 	SetFileSchema,
 	SetsResponseSchema,
 	TransferOwnerInputSchema,
+	TransferOwnerResponseSchema,
 	UpdateSetInputSchema,
 	type FactInput,
 } from '../schemas.js';
@@ -639,7 +641,7 @@ const transferOwnerRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Hand a set to another user',
 	description:
-		'Owner only, or admin. You can GIVE a set away; you cannot take one — a caller who is neither the current owner nor an admin gets the same 404 as a set that does not exist, so probing reveals nothing. Name the recipient by their registry userId (`GET /session/whoami`) — an opaque string, not necessarily a UUID. A userId is an identifier, not a credential, so it is safe to send and safe to log. Omit it to claim the set for yourself, which is how an admin adopts a set whose owner no longer holds a key. Nothing else moves: facts keep their ids, and ratings, attempts and saved progress are keyed on the READER rather than on the owner, so no one loses anything.',
+		'Owner only, or admin. You can GIVE a set away; you cannot take one — a caller who is neither the current owner nor an admin gets the same 404 as a set that does not exist, so probing reveals nothing. Name the recipient by their registry display NAME (the sharing picker at `GET /session/users/search` lists them); the name is resolved against the key registry and the resulting userId is what gets stored, so a name nobody holds is a 404 rather than a set assigned to nobody. Omit the body to claim the set for yourself, which is how an admin adopts a set whose owner no longer holds a key. Nothing else moves: facts keep their ids, and ratings, attempts and saved progress are keyed on the READER rather than on the owner, so no one loses anything.',
 	security: AUTHENTICATED,
 	request: {
 		params: z.object({ id: z.string() }),
@@ -651,14 +653,19 @@ const transferOwnerRoute = createRoute({
 	responses: {
 		200: {
 			description: 'Handed over',
-			content: { 'application/json': { schema: SetResponseSchema } },
+			content: { 'application/json': { schema: TransferOwnerResponseSchema } },
 		},
 		403: {
 			description: 'Not signed in, or below friend tier',
 			content: { 'application/json': { schema: ErrorResponseSchema } },
 		},
 		404: {
-			description: 'No such set — or not yours, and you are not an admin',
+			description:
+				'No such set — or not yours and you are not an admin — or no live key carries that name (NAME_NOT_FOUND)',
+			content: { 'application/json': { schema: ErrorResponseSchema } },
+		},
+		409: {
+			description: 'That name belongs to a key that has never signed in, so it has no id yet',
 			content: { 'application/json': { schema: ErrorResponseSchema } },
 		},
 	},
@@ -670,7 +677,7 @@ app.openapi(transferOwnerRoute, async (c) => {
 		return c.json({ success: false, error: 'Forbidden', message: writer.message }, 403);
 
 	const { id } = c.req.valid('param');
-	const { userId } = c.req.valid('json');
+	const { name } = c.req.valid('json');
 	const db = c.env.STUDY_DB;
 
 	// An admin may move any set — the escape hatch for one assigned to a userId
@@ -681,7 +688,27 @@ app.openapi(transferOwnerRoute, async (c) => {
 	const row = admin ? await loadSetById(db, id) : await loadSetForWrite(db, id, writer.userId);
 	if (!row) return notFoundWrapped(c, 'Set');
 
-	const nextOwner = userId ?? writer.userId;
+	// Resolve the NAME to an owner (R4/R5). The empty-body branch is untouched:
+	// claiming a set for yourself needs no lookup, because the caller's identity
+	// was already resolved at the edge — and that branch is the one that
+	// RECOVERED the 2026-08-25 incident, so it is correct by construction.
+	let nextOwner = writer.userId;
+	let grantee: { name: string | null; tier?: string } | null = null;
+	if (name !== undefined) {
+		const resolved = await resolveGrantee(c.env, { name });
+		if (isIdentityError(resolved)) {
+			return c.json(
+				{
+					success: false,
+					error: resolved.code === 'NO_USER_ID' ? 'Conflict' : 'Not Found',
+					message: resolved.error,
+				},
+				resolved.status === 409 ? 409 : 404
+			);
+		}
+		nextOwner = resolved.userId;
+		grantee = { name: resolved.name, tier: resolved.tier };
+	}
 	const now = Date.now();
 
 	if (nextOwner !== row.owner_user_id) {
@@ -705,8 +732,11 @@ app.openapi(transferOwnerRoute, async (c) => {
 		byAdmin: admin && row.owner_user_id !== writer.userId,
 	});
 
+	// Echo who it went to, so a human can confirm the identity before the change
+	// stops being undoable without the new owner's cooperation (R4).
 	return okWrapped(c, {
 		set: toSetJson({ ...row, owner_user_id: nextOwner, updated_at: now }, count?.n ?? 0, nextOwner),
+		...(grantee ? { grantedTo: { name: grantee.name, tier: grantee.tier ?? null } } : {}),
 	});
 });
 

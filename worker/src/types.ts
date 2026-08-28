@@ -35,6 +35,30 @@ export interface AppEnv {
 	 * refuses" to "every request 500s at runtime with a null deref".
 	 */
 	STUDY_DB: D1Database;
+
+	/**
+	 * The read-only key registry (`key:{rawKey}` → registry row), the same
+	 * namespace edge-router owns and task-api / prefs-api / watchparty-stats-api
+	 * bind.
+	 *
+	 * Needed for exactly one thing: `POST /sets/{id}/owner` takes a display
+	 * NAME and has to resolve it to the userId ownership is keyed on (R4). It
+	 * used to take a `userId` straight out of the request body and store it
+	 * unlooked-up, which on 2026-08-25 put a display name in
+	 * `sets.owner_user_id` and stranded a published set for two days.
+	 *
+	 * A resolve genuinely needs the registry: the shared person-picker
+	 * (`GET /session/users/search`) returns names and tiers and DELIBERATELY no
+	 * userId, because a selector that hands out ids invites the caller to post
+	 * one back — the shape R5 forbids. So the binding is the honest way to do
+	 * this, and it is read-only.
+	 *
+	 * Optional so a deploy without it degrades to a clear 400 on that one
+	 * endpoint rather than failing to boot.
+	 *
+	 * See docs/architecture/IDENTITY_MODEL.md in hadoku_site.
+	 */
+	SESSIONS_KV?: KVNamespace;
 }
 
 /**

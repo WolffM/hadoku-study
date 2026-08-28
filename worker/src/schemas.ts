@@ -393,46 +393,50 @@ export const RecordAttemptsInputSchema = z
 	.openapi('RecordAttemptsInput');
 
 /**
- * Handing a set to someone else.
+ * Handing a set to someone else, BY NAME.
  *
- * A userId is NOT a credential — it is the registry's stable per-user
- * identifier, and knowing one grants nothing. So naming a recipient by userId
- * is safe to accept, safe to log, and safe to put in a spec. What makes this
- * endpoint safe is not secrecy about the id; it is that only the set's CURRENT
- * OWNER (or an admin) may call it. You can give a set away. You cannot take
- * one.
+ * A recipient is named by their registry DISPLAY NAME — the identifier a human
+ * actually has, and one that changes no credential hands. The worker resolves
+ * it against the key registry and stores the resulting userId, echoing the name
+ * and tier back so the caller can confirm they hit the right identity (R4).
  *
- * An OPAQUE STRING, not a UUID. This validated the UUID shape for one release
- * and that was wrong: `registry.ts` mints a UUID only for records it creates
- * (`existing?.userId ?? crypto.randomUUID()`), so an identity seeded any other
- * way keeps whatever id it was given — `hadoku` is a real one. Every other
- * userId in this worker is already a plain string; that regex was the only
- * place in the codebase asserting a format, and it was asserting the wrong
- * one, which made a legitimate owner unassignable.
+ * IT USED TO TAKE A `userId`, AND THAT WAS THE INCIDENT. The reasoning was that
+ * a userId is not a credential, so accepting one is safe — true, and beside the
+ * point. What made it unsafe is that nothing RESOLVED it: an unresolved
+ * identifier in a request body is a claim, and this endpoint stored the claim.
+ * On 2026-08-25 `{"userId": "hadoku"}` was accepted (`hadoku` is a DISPLAY
+ * NAME; the registry row is `Hadoku` and its userId is `de5c2a05-…`) and a set
+ * became owned by nobody for two days.
  *
- * What is still checked is what a STORE needs rather than what a format
- * implies: non-empty, bounded, and no whitespace or control characters — so a
- * pasted line-break or a copied-with-spaces id cannot silently become an owner
- * nobody can authenticate as.
+ * The first fix was a UUID regex, which was then deleted for being a format
+ * opinion. Both were the wrong axis. A registry lookup rejects `hadoku` AND a
+ * well-formed UUID belonging to nobody, which a regex waves through — so the
+ * rule is not "check the shape", it is NEVER STORE AN IDENTIFIER YOU DID NOT
+ * RESOLVE.
+ *
+ * See docs/architecture/IDENTITY_MODEL.md in hadoku_site.
  */
 export const TransferOwnerInputSchema = z
 	.object({
-		userId: z
+		name: z
 			.string()
 			.trim()
 			.min(1)
 			.max(MAX_SLOT_NAME_LENGTH * 4)
-			.regex(/^\S+$/, {
-				message:
-					'A userId is the identifier on a registry key — see GET /session/whoami. It cannot contain whitespace.',
-			})
 			.optional()
 			.openapi({
-				example: 'hadoku',
+				example: 'thyeggman',
 				description:
-					'Who to hand it to, by their registry userId — an opaque string, not necessarily a UUID. Omit to claim it for the CALLER, which is how an admin adopts a set whose owner no longer holds a key.',
+					"The recipient's registry display name, as shown in the sharing picker (GET /session/users/search). Matched case-insensitively against live keys. Omit to claim the set for the CALLER, which is how an admin adopts a set whose owner no longer holds a key.",
 			}),
 	})
+	// STRICT, and that is load-bearing. zod's default is to strip an unknown key
+	// silently, which would turn an old client's `{"userId": "…"}` into an empty
+	// body — i.e. into a SELF-CLAIM. Quietly assigning the set to the caller
+	// instead of the person they named is a worse failure than the one this
+	// endpoint already had, because nothing would report it. Strict makes the
+	// retired field a 400 that names itself.
+	.strict()
 	.openapi('TransferOwnerInput');
 
 export const PutProgressInputSchema = z
@@ -457,6 +461,25 @@ export const SetDetailResponseSchema = SuccessResponseSchema(
 export const SetResponseSchema = SuccessResponseSchema(z.object({ set: SetSchema })).openapi(
 	'SetResponse'
 );
+
+/**
+ * What a hand-over returns: the set, plus WHO it went to.
+ *
+ * The echo is the point (R4). A transfer is the one change that alters who may
+ * edit a set and the only one its previous owner cannot undo alone, so the
+ * caller gets the resolved display name and tier back and can see they hit the
+ * identity they meant. Absent on the empty-body self-claim, where there is
+ * nobody to confirm.
+ */
+export const TransferOwnerResponseSchema = SuccessResponseSchema(
+	z.object({
+		set: SetSchema,
+		grantedTo: z
+			.object({ name: z.string().nullable(), tier: z.string().nullable() })
+			.optional()
+			.openapi({ description: 'The resolved recipient. Omitted when claiming the set yourself.' }),
+	})
+).openapi('TransferOwnerResponse');
 
 export const ProgressResponseSchema = SuccessResponseSchema(
 	z.object({ progress: ProgressSchema.nullable() })
