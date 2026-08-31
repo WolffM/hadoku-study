@@ -34,8 +34,8 @@ importers:
         specifier: ^5.1.0
         version: 5.2.0(vite@7.3.6(yaml@2.9.0))
       '@wolffm/logger':
-        specifier: ^1.3.3
-        version: 1.3.3
+        specifier: ^1.4.0
+        version: 1.4.0
       '@wolffm/task-ui-components':
         specifier: ^4.8.1
         version: 4.8.1(@wolffm/themes@5.8.2(react@19.2.8))(react@19.2.8)
@@ -92,7 +92,7 @@ importers:
         version: 9.39.5
       '@hono/zod-openapi':
         specifier: ^1.1.5
-        version: 1.6.0(hono@4.13.2)(zod@4.5.2)
+        version: 1.6.0(hono@4.13.2)(zod@4.5.4)
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.46.4
         version: 8.67.0(@typescript-eslint/parser@8.67.0(eslint@9.39.5)(typescript@5.9.3))(eslint@9.39.5)(typescript@5.9.3)
@@ -101,7 +101,7 @@ importers:
         version: 8.67.0(eslint@9.39.5)(typescript@5.9.3)
       '@wolffm/worker-utils':
         specifier: ^1.5.10
-        version: 1.5.10(zod@4.5.2)
+        version: 1.5.10(zod@4.5.4)
       eslint:
         specifier: ^9.39.1
         version: 9.39.5
@@ -900,8 +900,8 @@ packages:
     resolution: {integrity: sha512-6MxJ8Z/vhUozc9Q90rYR0YY5YZzuf/9azAPTXd6Iu+V7XIjXrfgs6zoEiEQWwv4VPUGzqpT7NZKW1PBv3EbreQ==, tarball: https://npm.pkg.github.com/download/@wolffm/logger/1.3.1/de57a6b958ebc88f8870df1dfba626a7fcb028fb}
     engines: {node: '>=18'}
 
-  '@wolffm/logger@1.3.3':
-    resolution: {integrity: sha512-bpLT7LxpAXeFRdL0NLMhBgqABfvCodPACzGt4ZW1mNvdPaG/4EPMxQA0t26gbnB/Iu50zrZ5RTZ+YgVEhteuRg==, tarball: https://npm.pkg.github.com/download/@wolffm/logger/1.3.3/44fbe5ee39aed1cda9c551e48215b6a7e8136700}
+  '@wolffm/logger@1.4.0':
+    resolution: {integrity: sha512-JH84fEmaA/z0mC2UQcXupFoki9+u9cR6BIuD5aY6sV/KuYTLGdzX7BigzKCQ30jyRzi9WNRlIa/NEPcOh9uZYw==, tarball: https://npm.pkg.github.com/download/@wolffm/logger/1.4.0/975f8189fd42dcbc1d5bcf7be3d2c80bb5344043}
     engines: {node: '>=18'}
 
   '@wolffm/prefs-client@1.0.11':
@@ -2472,15 +2472,15 @@ packages:
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
-  zod@4.5.2:
-    resolution: {integrity: sha512-XkYXCol10+ba/6F/cueWV+TezUeOqXW0hdeJt5CdXjTYeAgAQg5N03RQdJ80mhfFE72+pblvYMW4wy2Qp4Qbrg==}
+  zod@4.5.4:
+    resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
 
 snapshots:
 
-  '@asteasolutions/zod-to-openapi@9.1.0(zod@4.5.2)':
+  '@asteasolutions/zod-to-openapi@9.1.0(zod@4.5.4)':
     dependencies:
       openapi3-ts: 4.6.1
-      zod: 4.5.2
+      zod: 4.5.4
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -2760,18 +2760,18 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@hono/zod-openapi@1.6.0(hono@4.13.2)(zod@4.5.2)':
+  '@hono/zod-openapi@1.6.0(hono@4.13.2)(zod@4.5.4)':
     dependencies:
-      '@asteasolutions/zod-to-openapi': 9.1.0(zod@4.5.2)
-      '@hono/zod-validator': 0.9.0(hono@4.13.2)(zod@4.5.2)
+      '@asteasolutions/zod-to-openapi': 9.1.0(zod@4.5.4)
+      '@hono/zod-validator': 0.9.0(hono@4.13.2)(zod@4.5.4)
       hono: 4.13.2
       openapi3-ts: 4.6.1
-      zod: 4.5.2
+      zod: 4.5.4
 
-  '@hono/zod-validator@0.9.0(hono@4.13.2)(zod@4.5.2)':
+  '@hono/zod-validator@0.9.0(hono@4.13.2)(zod@4.5.4)':
     dependencies:
       hono: 4.13.2
-      zod: 4.5.2
+      zod: 4.5.4
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -3220,7 +3220,7 @@ snapshots:
 
   '@wolffm/logger@1.3.1': {}
 
-  '@wolffm/logger@1.3.3': {}
+  '@wolffm/logger@1.4.0': {}
 
   '@wolffm/prefs-client@1.0.11(react@19.2.8)(zod@4.4.3)':
     dependencies:
@@ -3238,9 +3238,9 @@ snapshots:
       react: 19.2.8
       zod: 4.4.3
 
-  '@wolffm/worker-utils@1.5.10(zod@4.5.2)':
+  '@wolffm/worker-utils@1.5.10(zod@4.5.4)':
     dependencies:
-      '@hono/zod-openapi': 1.6.0(hono@4.13.2)(zod@4.5.2)
+      '@hono/zod-openapi': 1.6.0(hono@4.13.2)(zod@4.5.4)
       '@wolffm/logger': 1.3.1
       hono: 4.13.2
     transitivePeerDependencies:
@@ -5047,4 +5047,4 @@ snapshots:
 
   zod@4.4.3: {}
 
-  zod@4.5.2: {}
+  zod@4.5.4: {}
