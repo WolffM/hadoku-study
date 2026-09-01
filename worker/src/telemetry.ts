@@ -95,8 +95,22 @@ export function deckShape(
  * whether a set is being STUDIED or merely opened. Counts only — a log line is
  * not the place for what somebody typed.
  */
-export function attemptEvent(userId: string, setId: string, game: string, answers: number): void {
-	log.event('study.attempts.recorded', { userId, setId, game, answers });
+export function attemptEvent(
+	userId: string,
+	setId: string,
+	game: string,
+	answers: number,
+	/**
+	 * Answers this request offered that the ledger already held, by client id.
+	 *
+	 * Worth its own field rather than folding into `answers`: a retry is the
+	 * normal, healthy path, but a rate that stops falling to zero means clients
+	 * are sending and never confirming — the outbox filling up rather than
+	 * draining, which nothing else here would show.
+	 */
+	duplicates: number
+): void {
+	log.event('study.attempts.recorded', { userId, setId, game, answers, duplicates });
 }
 
 /**

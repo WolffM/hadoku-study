@@ -9,9 +9,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import workerDb from '../../worker/src/db.ts?raw'
 import type { StudyClient } from '../api/client'
 import type { AttemptInput, QuestionRating } from '../api/types'
 import {
+  MAX_PER_SEND,
   OUTBOX_LIMIT,
   clearHeldFor,
   enqueue,
@@ -49,7 +51,9 @@ afterEach(() => {
   Reflect.deleteProperty(globalThis, 'localStorage')
 })
 
+let nextId = 0
 const pending = (over: Partial<PendingAttempt> = {}): PendingAttempt => ({
+  attemptId: `attempt-${++nextId}`,
   setId: 's1',
   game: 'drill',
   factId: 'f1',
@@ -72,10 +76,49 @@ const rating = (over: Partial<QuestionRating> = {}): QuestionRating => ({
 const clientWith = (recordAttempts: ReturnType<typeof vi.fn>) =>
   ({ recordAttempts }) as unknown as StudyClient
 
+describe('the send cap', () => {
+  it('matches the cap the server actually enforces', () => {
+    // Two constants, two packages, and the client's copy is only correct while
+    // it equals the server's. If they drift the client sends a batch the
+    // schema rejects, every flush 400s, and — since a rejected send clears
+    // nothing — the reader's outbox wedges permanently with nothing to see.
+    //
+    // Read as TEXT (`?raw`) rather than imported as a module: importing worker
+    // source would pull a file full of D1 types into the UI's lint and type
+    // projects, where it resolves to `error` and fails the build. A regex over
+    // the declaration costs nothing and fails just as loudly if the server's
+    // number moves.
+    const declared = /MAX_ATTEMPTS_PER_REQUEST\s*=\s*(\d+)/.exec(workerDb)
+    expect(declared, 'MAX_ATTEMPTS_PER_REQUEST not found in worker/src/db.ts').not.toBeNull()
+    expect(MAX_PER_SEND).toBe(Number(declared?.[1]))
+  })
+
+  it('holds more than it sends, so a backlog survives to drain', () => {
+    expect(OUTBOX_LIMIT).toBeGreaterThan(MAX_PER_SEND)
+  })
+})
+
 describe('the queue', () => {
   it('round-trips what it was given', () => {
-    enqueue(pending())
-    expect(readOutbox()).toEqual([pending()])
+    const entry = pending()
+    enqueue(entry)
+    expect(readOutbox()).toEqual([entry])
+  })
+
+  it('repairs an entry queued before ids existed, and PERSISTS the repair', () => {
+    // The bundle that first shipped queueing wrote entries with no attemptId.
+    // Those are real graded answers; rejecting them on a schema bump would be
+    // the loss this module exists to prevent. The id must also stick — one
+    // invented afresh on every read would never match what a send cleared, so
+    // the entry would be resent for ever.
+    const { attemptId: _omitted, ...legacy } = pending()
+    store.set('hadoku_study_attempt_outbox', JSON.stringify([legacy]))
+
+    const first = readOutbox()
+    expect(first).toHaveLength(1)
+    expect(first[0].attemptId).toEqual(expect.any(String))
+    expect(first[0].factId).toBe('f1')
+    expect(readOutbox()[0].attemptId).toBe(first[0].attemptId)
   })
 
   it('reads as empty when there is nothing stored', () => {
@@ -146,7 +189,7 @@ describe('recording an answer', () => {
     // This used to assert the answer was DISCARDED, on the reasoning that a
     // signed-out queue "would grow forever and never drain". It is bounded by
     // OUTBOX_LIMIT either way, and signing in is precisely how it drains.
-    expect(readOutbox()).toEqual([{ ...attempt, setId: 's1', game: 'drill' }])
+    expect(readOutbox()).toMatchObject([{ ...attempt, setId: 's1', game: 'drill' }])
   })
 
   it('sends what was graded before sign-in on the first enabled send', async () => {
@@ -166,13 +209,58 @@ describe('recording an answer', () => {
     expect(readOutbox()).toEqual([])
   })
 
-  it('holds a disabled answer per set, leaving another set’s alone', async () => {
+  it('holds a disabled answer per set, leaving another set\u2019s alone', async () => {
     await recordAttempt(
       { client: clientWith(vi.fn()), setId: 's2', game: 'drill', enabled: false },
       attempt
     )
     expect(heldFor('s1')).toHaveLength(0)
     expect(heldFor('s2')).toHaveLength(1)
+  })
+
+  it('writes the answer down BEFORE attempting to send it', async () => {
+    // The write-ahead guarantee, observed at the one moment it matters: while
+    // the request is in flight. A tab killed here must still hold the answer.
+    let outboxDuringFlight: number | null = null
+    const send = vi.fn().mockImplementation(() => {
+      outboxDuringFlight = readOutbox().length
+      return Promise.resolve([])
+    })
+    await recordAttempt(
+      { client: clientWith(send), setId: 's1', game: 'drill', enabled: true },
+      attempt
+    )
+    expect(outboxDuringFlight).toBe(1)
+    expect(readOutbox()).toEqual([])
+  })
+
+  it('carries an attemptId, so the server can dedupe a retry', async () => {
+    const send = vi.fn().mockResolvedValue([])
+    await recordAttempt(
+      { client: clientWith(send), setId: 's1', game: 'drill', enabled: true },
+      attempt
+    )
+    const [, , batch] = send.mock.calls[0] as [string, string, AttemptInput[]]
+    expect(batch[0].attemptId).toEqual(expect.any(String))
+    expect(batch[0].attemptId).not.toEqual('')
+  })
+
+  it('keeps one answer\u2019s id stable across a failed send and its retry', async () => {
+    // At-least-once delivery only becomes exactly-once if the id survives the
+    // retry. A fresh one per attempt would defeat the server's dedupe.
+    const failing = vi.fn().mockRejectedValue(new Error('offline'))
+    await recordAttempt(
+      { client: clientWith(failing), setId: 's1', game: 'drill', enabled: true },
+      attempt
+    )
+    const queuedId = readOutbox()[0].attemptId
+    const send = vi.fn().mockResolvedValue([])
+    await recordAttempt(
+      { client: clientWith(send), setId: 's1', game: 'drill', enabled: true },
+      { factId: 'f2', variantKey: 'answer<prompt>', result: 'got' }
+    )
+    const [, , batch] = send.mock.calls[0] as [string, string, AttemptInput[]]
+    expect(batch[0].attemptId).toBe(queuedId)
   })
 
   it('returns the new ratings on success', async () => {
@@ -182,11 +270,13 @@ describe('recording an answer', () => {
       attempt
     )
     expect(result).toEqual([rating()])
-    expect(send).toHaveBeenCalledWith('s1', 'drill', [attempt])
+    const [setId, game, batch] = send.mock.calls[0] as [string, string, AttemptInput[]]
+    expect([setId, game]).toEqual(['s1', 'drill'])
+    expect(batch).toMatchObject([attempt])
   })
 
   it('flushes what the set was holding on the SAME request, oldest first', async () => {
-    // One round trip, and the server applies them in order — so a streak that
+    // One round trip, and the server applies them in order \u2014 so a streak that
     // spans an offline patch is still a streak.
     enqueue(pending({ factId: 'held1' }))
     enqueue(pending({ factId: 'held2' }))
@@ -200,7 +290,7 @@ describe('recording an answer', () => {
     expect(readOutbox()).toEqual([])
   })
 
-  it('leaves another set’s held answers alone', async () => {
+  it('leaves another set\u2019s held answers alone', async () => {
     enqueue(pending({ setId: 's2', factId: 'other' }))
     const send = vi.fn().mockResolvedValue([])
     await recordAttempt(
@@ -212,7 +302,7 @@ describe('recording an answer', () => {
     expect(heldFor('s2')).toHaveLength(1)
   })
 
-  it('queues the whole batch again when the send fails', async () => {
+  it('leaves the whole batch queued when the send fails', async () => {
     enqueue(pending({ factId: 'held1' }))
     const send = vi.fn().mockRejectedValue(new Error('offline'))
     const result = await recordAttempt(
@@ -220,10 +310,56 @@ describe('recording an answer', () => {
       attempt
     )
     expect(result).toBeNull()
-    // Both the held one and the new one — the queue is cleared before the send
-    // precisely so a failure re-queues once rather than duplicating the held
-    // copies.
+    // Nothing is re-queued, because nothing was ever removed. The batch is
+    // still exactly where it was written before the send was attempted.
     expect(readOutbox().map(entry => entry.factId)).toEqual(['held1', 'f1'])
+  })
+
+  it('keeps an answer graded while a request was in flight', async () => {
+    // Clearing by SET rather than by id would take this one with it, unsent.
+    let resolveSend: (value: unknown) => void = () => {}
+    const send = vi.fn().mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveSend = resolve
+        })
+    )
+    const inFlight = recordAttempt(
+      { client: clientWith(send), setId: 's1', game: 'drill', enabled: true },
+      attempt
+    )
+    enqueue(pending({ factId: 'graded-meanwhile' }))
+    resolveSend([])
+    await inFlight
+    expect(readOutbox().map(entry => entry.factId)).toEqual(['graded-meanwhile'])
+  })
+
+  it('never sends more answers than the server will accept', async () => {
+    // The server caps a batch at MAX_ATTEMPTS_PER_REQUEST and 400s an
+    // oversized one. Since a rejected send now clears nothing, exceeding it
+    // would wedge the outbox permanently: every flush from then on fails, and
+    // the reader simply stops syncing with nothing to see.
+    for (let i = 0; i < MAX_PER_SEND + 20; i++) enqueue(pending({ factId: `held${i}` }))
+    const send = vi.fn().mockResolvedValue([])
+    await recordAttempt(
+      { client: clientWith(send), setId: 's1', game: 'drill', enabled: true },
+      attempt
+    )
+    const [, , batch] = send.mock.calls[0] as [string, string, AttemptInput[]]
+    expect(batch).toHaveLength(MAX_PER_SEND)
+    // Oldest first, and the remainder is still held rather than dropped.
+    expect(batch[0].factId).toBe('held0')
+    expect(readOutbox()).toHaveLength(21)
+  })
+
+  it('drains a backlog across successive grades', async () => {
+    for (let i = 0; i < MAX_PER_SEND + 5; i++) enqueue(pending({ factId: `held${i}` }))
+    const send = vi.fn().mockResolvedValue([])
+    const options = { client: clientWith(send), setId: 's1', game: 'drill', enabled: true }
+    await recordAttempt(options, attempt)
+    expect(readOutbox()).toHaveLength(6)
+    await recordAttempt(options, attempt)
+    expect(readOutbox()).toHaveLength(0)
   })
 
   it('never rejects, because the caller is a grade handler mid-game', async () => {
@@ -242,7 +378,8 @@ describe('recording an answer', () => {
       { client: clientWith(send), setId: 's1', game: 'board', enabled: true },
       attempt
     )
-    expect(send).toHaveBeenCalledWith('s1', 'board', [attempt])
+    const [, game] = send.mock.calls[0] as [string, string, AttemptInput[]]
+    expect(game).toBe('board')
   })
 })
 

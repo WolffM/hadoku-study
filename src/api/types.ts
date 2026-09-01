@@ -127,6 +127,16 @@ export interface QuestionRatingChange extends QuestionRating {
 
 /** One self-graded answer, on its way to the ledger. */
 export interface AttemptInput {
+  /**
+   * This answer's id, minted when it was graded and kept across every retry.
+   *
+   * The server stores it as the attempt's primary key and ignores an id it has
+   * already recorded, which is what makes re-sending safe — and re-sending is
+   * what lets the client keep an answer until delivery is CONFIRMED. Optional
+   * on the type only because the server tolerates its absence from an older
+   * bundle; `recordAttempt` always supplies one.
+   */
+  attemptId?: string
   factId: string
   variantKey: string
   result: CardResult

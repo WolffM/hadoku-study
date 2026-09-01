@@ -376,6 +376,22 @@ export const RatingChangeSchema = RatingSchema.extend({
  */
 export const AttemptInputSchema = z
 	.object({
+		/**
+		 * The client's id for this answer — the IDEMPOTENCY KEY.
+		 *
+		 * Minted once, when the answer is graded, and kept across every requeue
+		 * and retry. The server stores it as `attempts.id` and ignores an id it
+		 * has already seen, which is what lets the client hold an answer in its
+		 * outbox until a send is CONFIRMED rather than clearing it first and
+		 * hoping. Without this the client had to choose between losing an
+		 * answer to a dropped request and double-counting one to a retry, and
+		 * it chose losing.
+		 *
+		 * Optional so a bundle older than this deploy keeps working: the server
+		 * mints one and the answer lands exactly as before, just without the
+		 * retry safety. Every current client sends it.
+		 */
+		attemptId: z.string().trim().min(1).max(64).optional(),
 		factId: z.string(),
 		variantKey: z.string(),
 		result: z.enum(['got', 'missed']),

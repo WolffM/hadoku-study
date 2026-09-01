@@ -253,7 +253,32 @@ app.openapi(recordRoute, async (c) => {
 	// that, and a recap showing only the last move would understate it.
 	const moved = new Map<string, { global: number; local: number }>();
 
-	for (const attempt of input.attempts) {
+	// Answers this ledger already holds, by the client's own id.
+	//
+	// A retry is the NORMAL case, not an error: the client keeps an answer in
+	// its outbox until a send is confirmed, so a request that succeeded while
+	// the reply was lost — a closed tab, a dead tunnel — is sent again. Skipping
+	// a seen id is what makes that safe, and it has to skip the DRIFT too, not
+	// just the insert: applying it twice would move a rating for one answer
+	// twice, which is the silent corruption a duplicate row would at least be
+	// visible as.
+	//
+	// Scoped to this user. Ids are minted client-side, so another reader's
+	// collision must not silently swallow this reader's answer.
+	const offered = input.attempts.map((attempt) => attempt.attemptId).filter((v) => v !== undefined);
+	const seen = new Set<string>();
+	if (offered.length > 0) {
+		const placeholders = offered.map((_, index) => `?${index + 2}`).join(', ');
+		const rows = await db
+			.prepare(`SELECT id FROM attempts WHERE user_id = ?1 AND id IN (${placeholders})`)
+			.bind(userId, ...offered)
+			.all<{ id: string }>();
+		for (const row of rows.results) seen.add(row.id);
+	}
+
+	const { fresh, skipped } = unseenAnswers(input.attempts, seen);
+
+	for (const attempt of fresh) {
 		const entry = byId.get(variantId(attempt.factId, attempt.variantKey));
 		if (!entry) continue;
 		const result = attempt.result;
@@ -291,7 +316,9 @@ app.openapi(recordRoute, async (c) => {
 					 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
 				)
 				.bind(
-					newId(),
+					// The client's id when it sent one, so the row IS the
+					// idempotency record and a retry collides with itself.
+					attempt.attemptId ?? newId(),
 					userId,
 					id,
 					entry.factId,
@@ -321,9 +348,13 @@ app.openapi(recordRoute, async (c) => {
 
 	// One batch, so an attempt cannot be counted in the ledger without its
 	// ratings moving, or the reverse. D1 wraps a batch in a transaction.
-	await db.batch(statements);
+	//
+	// Guarded because a request in which EVERY answer was already held is now
+	// an ordinary outcome — the confirmed-delivery retry — and `batch([])`
+	// is not something to find out about in production.
+	if (statements.length > 0) await db.batch(statements);
 
-	attemptEvent(userId, id, input.game, input.attempts.length);
+	attemptEvent(userId, id, input.game, input.attempts.length - skipped, skipped);
 
 	return okWrapped(c, {
 		ratings: entries
@@ -334,6 +365,45 @@ app.openapi(recordRoute, async (c) => {
 			}),
 	});
 });
+
+/**
+ * The answers in a batch this ledger has not already recorded.
+ *
+ * The client keeps an answer until a send is CONFIRMED, so a request whose
+ * reply was lost — a closed tab, a dead tunnel — arrives again in full. That
+ * makes delivery at-least-once and this function is what makes the ledger
+ * exactly-once.
+ *
+ * Two sources of repetition, one rule:
+ *   - across requests, via `held` (what the table already has);
+ *   - WITHIN one request, because an outbox flushed twice concurrently puts
+ *     the same id in one batch. Marking as it goes covers both.
+ *
+ * An attempt with no `attemptId` is always fresh: it came from a bundle older
+ * than the idempotency key and there is nothing to match it on. That is the
+ * pre-existing behaviour, unchanged — it cannot dedupe, and it must not drop.
+ */
+export function unseenAnswers<T extends { attemptId?: string }>(
+	attempts: readonly T[],
+	held: ReadonlySet<string>
+): { fresh: T[]; skipped: number } {
+	const seen = new Set(held);
+	const fresh: T[] = [];
+	let skipped = 0;
+	for (const attempt of attempts) {
+		if (attempt.attemptId === undefined) {
+			fresh.push(attempt);
+			continue;
+		}
+		if (seen.has(attempt.attemptId)) {
+			skipped++;
+			continue;
+		}
+		seen.add(attempt.attemptId);
+		fresh.push(attempt);
+	}
+	return { fresh, skipped };
+}
 
 /**
  * Write one rating row, creating it if this is its first attempt.
