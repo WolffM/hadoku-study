@@ -201,6 +201,27 @@ function lintArchetypes(facts: FactInput[], archetypes: Archetype[]): Finding[] 
       })
     }
 
+    // Both halves of a PAIR, which is one piece of knowledge asked twice.
+    //
+    // A two-slot archetype is a relation — quote↔who, term↔definition — so
+    // asking a fact both ways drills the same thing twice and splits its
+    // history across two ratings that can never disagree usefully. A column
+    // still wants both directions; it gets them by varying across FACTS.
+    //
+    // A warning rather than an error, because one real case wants both: a
+    // vocabulary set where recognising a word and producing it are different
+    // skills. Nothing else in this set is that.
+    if (archetype.ask.length === 2) {
+      const asked = new Set((fact.questions ?? []).map(question => question.ask))
+      if (archetype.ask.every(slot => asked.has(slot))) {
+        findings.push({
+          severity: 'warning',
+          factIndex: index,
+          message: `This fact is asked both ways round (${archetype.ask.join(' and ')}), which drills one piece of knowledge twice. Keep one direction and let other facts in "${archetype.name}" carry the other.`
+        })
+      }
+    }
+
     for (const question of fact.questions ?? []) {
       if (!askable.has(question.ask)) {
         findings.push({

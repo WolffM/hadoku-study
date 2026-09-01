@@ -65,6 +65,13 @@ instead. It is also how you retire an open-ended slot: leave "why" out of
 A fact belongs to EXACTLY ONE archetype. That is the rule that stops a board
 feeling like the same material four times over.
 
+ASK A PAIR ONE WAY ROUND. When an archetype's "ask" has two slots it is a
+relation — quote/who, term/definition — and asking one fact BOTH ways drills
+the same knowledge twice and splits its history over two ratings. Give each
+fact one direction and let the column get its variety from other facts: some
+cells ask for the word, others ask for the meaning. (A vocabulary set where
+recognising and producing a word are different skills is the one exception.)
+
 THE FIVE RULES THAT MATTER
 
 1. KEEP EVERY FACT'S "id" EXACTLY AS IT IS. Ratings and play history hang off

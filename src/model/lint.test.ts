@@ -268,3 +268,42 @@ describe('the whole set', () => {
     expect(boardAdvice(lintSet(plenty, archetypes))).toBeNull()
   })
 })
+
+describe('asking one fact both ways round', () => {
+  const pair = [{ name: 'term', label: 'Vocabulary', ask: ['term', 'definition'] }]
+  const both: FactInput = {
+    slots: { term: 'Anfechtung', definition: 'crushing spiritual despair' },
+    archetype: 'term',
+    questions: [
+      { ask: 'term', prompt: 'What is the German word for it?' },
+      { ask: 'definition', prompt: 'What does Anfechtung mean?' }
+    ]
+  }
+
+  it('warns, because it drills one piece of knowledge twice', () => {
+    const report = lintSet([both], pair)
+    expect(
+      report.findings.some(f => f.severity === 'warning' && f.message.includes('both ways round'))
+    ).toBe(true)
+  })
+
+  it('says nothing when the fact picks a direction', () => {
+    const one = { ...both, questions: [both.questions![0]] }
+    const report = lintSet([one], pair)
+    expect(report.findings.some(f => f.message.includes('both ways round'))).toBe(false)
+  })
+
+  it('leaves a three-slot archetype alone — those are attributes, not a pair', () => {
+    // who/where/when of one event are three different things to know. Only a
+    // TWO-slot archetype is a relation that can be read backwards.
+    const trio = [{ name: 'event', label: 'Events', ask: ['who', 'where', 'when'] }]
+    const fact: FactInput = {
+      slots: { who: 'Luther', where: 'Worms', when: '1521' },
+      archetype: 'event',
+      questions: [{ ask: 'who' }, { ask: 'where' }, { ask: 'when' }]
+    }
+    expect(lintSet([fact], trio).findings.some(f => f.message.includes('both ways round'))).toBe(
+      false
+    )
+  })
+})
