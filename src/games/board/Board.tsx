@@ -272,13 +272,6 @@ export function Board({ set, client, syncEnabled, onExit }: GameProps) {
             </SessionRecap>
           </div>
         )}
-
-        {board.unplaced.length > 0 && (
-          <p className="muted board__note">
-            {board.unplaced.length} {board.unplaced.length === 1 ? 'question is' : 'questions are'}{' '}
-            not on the board. They are still in the deck when you study this set.
-          </p>
-        )}
       </div>
 
       {open && (
