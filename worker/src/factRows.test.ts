@@ -16,6 +16,7 @@ import type { FactRow } from './types.js';
 const row = (over: Partial<FactRow> & { id: string }): FactRow => ({
 	set_id: 's1',
 	position: 0,
+	archetype: null,
 	slots: JSON.stringify({ prompt: 'кот', answer: 'cat' }),
 	questions: null,
 	detail: null,

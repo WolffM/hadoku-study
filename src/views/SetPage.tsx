@@ -145,7 +145,7 @@ export function SetPage({
         title: parsed.title,
         description: parsed.description,
         diff: diffSet(set, parsed),
-        report: lintSet(parsed.facts)
+        report: lintSet(parsed.facts, parsed.archetypes ?? set.archetypes ?? [])
       })
     },
     [set]

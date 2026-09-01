@@ -15,7 +15,10 @@ import { toPlayCards } from '../../model/playCards'
 import { buildBoard } from './model'
 
 export function BoardPreview({ set }: { set: StudySetDetail }) {
-  const board = useMemo(() => buildBoard(toPlayCards(set.facts)), [set.facts])
+  const board = useMemo(
+    () => buildBoard(toPlayCards(set.facts), { archetypes: set.archetypes }),
+    [set.facts, set.archetypes]
+  )
 
   const rowCount = Math.max(0, ...board.columns.map(column => column.cells.size))
 

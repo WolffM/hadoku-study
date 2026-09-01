@@ -19,9 +19,14 @@ export interface PlayCard {
   id: string
   factId: string
   variantKey: string
-  /** Which slot this question's answer is. A board column is made of every
-   *  question that asks the same slot, so this is what a category IS. */
+  /** Which slot this question's answer is. */
   ask: string
+  /**
+   * The archetype this question's fact belongs to, or null for the implicit
+   * one. A board column is one archetype, so this is what a category IS —
+   * it used to be `ask`, which scattered one fact across several columns.
+   */
+  archetype: string | null
   /** The question. */
   front: string
   /** The answer. */
@@ -48,6 +53,7 @@ export function toPlayCards(facts: StudyFact[]): PlayCard[] {
       factId: fact.id,
       variantKey: variant.key,
       ask: variant.ask,
+      archetype: fact.archetype ?? null,
       front: variant.prompt,
       back: variant.answer,
       detail: fact.detail ?? null,

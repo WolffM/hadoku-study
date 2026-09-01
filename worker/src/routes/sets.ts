@@ -43,7 +43,8 @@ import {
 	UpdateSetInputSchema,
 	type FactInput,
 } from '../schemas.js';
-import { readFact, toSetFile } from '../factRows.js';
+import { askableByArchetype, askableFor, readFact, toSetFile } from '../factRows.js';
+import type { Archetype } from '../variants.js';
 import { AUTHENTICATED, OPTIONAL_AUTH } from '../security.js';
 import { deckShape, setEvent } from '../telemetry.js';
 import type { AppEnv, SetRow } from '../types.js';
@@ -83,7 +84,7 @@ const listJson = (rows: SetWithCount[], viewerId: string | null) =>
 	rows.map((row) => toSetJson(row, row.fact_count, viewerId));
 
 /** Columns bound per fact row — keep in step with the INSERT below. */
-export const FACT_COLUMNS = 7;
+export const FACT_COLUMNS = 8;
 
 /**
  * Serialize a fact's attrs for storage.
@@ -195,6 +196,7 @@ function factReplacementStatements(
 				ids[position],
 				setId,
 				position,
+				fact.archetype ?? null,
 				JSON.stringify(fact.slots),
 				serializeQuestions(fact.questions),
 				// `?? null` rather than omitting: an absent optional field and an
@@ -206,7 +208,7 @@ function factReplacementStatements(
 		});
 		return db
 			.prepare(
-				`INSERT INTO facts (id, set_id, position, slots, questions, detail, attrs)
+				`INSERT INTO facts (id, set_id, position, archetype, slots, questions, detail, attrs)
 				 VALUES ${values.join(', ')}`
 			)
 			.bind(...bindings);
@@ -224,9 +226,102 @@ async function existingFactIds(db: D1Database, setId: string): Promise<Set<strin
 	return new Set(res.results.map((row) => row.id));
 }
 
-/** Read a set's facts back as the API returns them. */
-async function factsJson(db: D1Database, setId: string) {
-	return (await listFacts(db, setId)).map(readFact);
+/**
+ * A set's declared archetypes, parsed.
+ *
+ * Stored as JSON text, so a row written by a newer deploy — or hand-edited —
+ * must not take a read down. An unreadable value reads as "declares none",
+ * which degrades a set to a one-column board rather than a 500.
+ */
+export function parseArchetypes(raw: string | null): Archetype[] | null {
+	if (!raw) return null;
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		return Array.isArray(parsed) ? (parsed as Archetype[]) : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Delete the rating rows a save just orphaned.
+ *
+ * Two ways a rating becomes unreachable, and both are ordinary edits:
+ *   - the FACT is gone, so every rating under its id is dead;
+ *   - the fact survives but no longer asks that question — a renamed slot, a
+ *     dropped declaration, an archetype narrowed so the slot is not askable.
+ *
+ * Chunked against D1's bound-parameter ceiling, which is 100 and not SQLite's
+ * 999 — the same ceiling `INSERT_CHUNK` is derived from, and the same one that
+ * broke every write of a set over 20 cards when it was assumed to be larger.
+ */
+function deadRatingStatements(
+	db: D1Database,
+	stored: { id: string; variants: { key: string }[] }[],
+	priorIds: Set<string>,
+	liveIds: Set<string>
+): D1PreparedStatement[] {
+	const statements: D1PreparedStatement[] = [];
+	const tables = ['variant_ratings', 'user_variant_ratings'] as const;
+
+	// Facts that no longer exist at all.
+	const removed = [...priorIds].filter((factId) => !liveIds.has(factId));
+	for (const group of chunk(removed, D1_MAX_BOUND_PARAMS)) {
+		const holes = group.map((_, i) => `?${i + 1}`).join(', ');
+		for (const table of tables) {
+			statements.push(
+				db.prepare(`DELETE FROM ${table} WHERE fact_id IN (${holes})`).bind(...group)
+			);
+		}
+	}
+
+	// Facts that survived, but whose question list moved under them.
+	for (const fact of stored) {
+		const keys = fact.variants.map((variant) => variant.key);
+		for (const table of tables) {
+			if (keys.length === 0) {
+				statements.push(db.prepare(`DELETE FROM ${table} WHERE fact_id = ?1`).bind(fact.id));
+				continue;
+			}
+			// One statement per fact: a fact has at most MAX_SLOTS_PER_FACT
+			// variants, so this is nowhere near the ceiling, and a NOT IN over
+			// every fact's keys at once would blow straight through it.
+			const holes = keys.map((_, i) => `?${i + 2}`).join(', ');
+			statements.push(
+				db
+					.prepare(`DELETE FROM ${table} WHERE fact_id = ?1 AND variant_key NOT IN (${holes})`)
+					.bind(fact.id, ...keys)
+			);
+		}
+	}
+
+	return statements;
+}
+
+/**
+ * Archetypes as stored: JSON text, or NULL for a set declaring none.
+ *
+ * NULL and `[]` collapse to NULL deliberately — "has not decided" and "decided
+ * on nothing" would otherwise be two representations of the same one-column
+ * board, and every reader would have to know they mean the same thing.
+ */
+function serializeArchetypes(archetypes: Archetype[] | null | undefined): string | null {
+	if (!archetypes || archetypes.length === 0) return null;
+	return JSON.stringify(archetypes);
+}
+
+/**
+ * Read a set's facts back as the API returns them.
+ *
+ * Each fact is expanded against its own archetype's `ask` list. Note the
+ * explicit arrow rather than `.map(readFact)`: `readFact` takes a second
+ * parameter and `Array.map` passes the INDEX into it, which typechecks as
+ * nothing and would silently expand every fact against garbage.
+ */
+async function factsJson(db: D1Database, setId: string, row: SetRow) {
+	const byName = askableByArchetype(parseArchetypes(row.archetypes));
+	const facts = await listFacts(db, setId);
+	return facts.map((fact) => readFact(fact, askableFor(fact, byName)));
 }
 
 /** A set with its whole content, counted from the facts it is already sending. */
@@ -368,10 +463,18 @@ app.openapi(createRouteDef, async (c) => {
 	await db.batch([
 		db
 			.prepare(
-				`INSERT INTO sets (id, owner_user_id, title, description, published_at, created_at, updated_at)
-				 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)`
+				`INSERT INTO sets (id, owner_user_id, title, description, archetypes, published_at, created_at, updated_at)
+				 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)`
 			)
-			.bind(id, writer.userId, input.title, input.description ?? null, publishedAt, now),
+			.bind(
+				id,
+				writer.userId,
+				input.title,
+				input.description ?? null,
+				serializeArchetypes(input.archetypes),
+				publishedAt,
+				now
+			),
 		...factReplacementStatements(db, id, facts, ids),
 	]);
 
@@ -380,12 +483,13 @@ app.openapi(createRouteDef, async (c) => {
 		owner_user_id: writer.userId,
 		title: input.title,
 		description: input.description ?? null,
+		archetypes: serializeArchetypes(input.archetypes),
 		published_at: publishedAt,
 		created_at: now,
 		updated_at: now,
 	};
 
-	const stored = await factsJson(db, id);
+	const stored = await factsJson(db, id, row);
 
 	setEvent('created', writer, id, {
 		published: publishedAt !== null,
@@ -428,7 +532,7 @@ app.openapi(getSetRoute, async (c) => {
 	const row = await loadSetForRead(db, id, viewerId);
 	if (!row) return notFoundWrapped(c, 'Set');
 
-	const facts = await factsJson(db, id);
+	const facts = await factsJson(db, id, row);
 	return okWrapped(c, { set: toSetDetailJson(row, facts, viewerId) });
 });
 
@@ -467,7 +571,10 @@ app.openapi(getFileRoute, async (c) => {
 	// The one route that answers unwrapped. Everything else in this worker uses
 	// the wrapped format, and that is still right — but a document a person
 	// copies should not arrive inside an envelope they have to unwrap first.
-	return c.json(toSetFile(row, (await listFacts(db, id)).map(readFact)), 200);
+	const archetypes = parseArchetypes(row.archetypes);
+	const byName = askableByArchetype(archetypes);
+	const facts = (await listFacts(db, id)).map((fact) => readFact(fact, askableFor(fact, byName)));
+	return c.json(toSetFile({ ...row, archetypes }, facts), 200);
 });
 
 // ============================================================================
@@ -592,6 +699,7 @@ app.openapi(replaceSetRoute, async (c) => {
 
 	const now = Date.now();
 	const description = input.description ?? null;
+	const archetypesJson = serializeArchetypes(input.archetypes);
 	const publishedAt = nextPublishedAt(row.published_at, input.published, now);
 	// Read BEFORE the swap: this is what lets a fact keep its id, and with it
 	// every rating hanging off that id.
@@ -606,12 +714,31 @@ app.openapi(replaceSetRoute, async (c) => {
 		...factReplacementStatements(db, id, input.facts, ids),
 		db
 			.prepare(
-				`UPDATE sets SET title = ?1, description = ?2, published_at = ?3, updated_at = ?4 WHERE id = ?5`
+				`UPDATE sets SET title = ?1, description = ?2, archetypes = ?3, published_at = ?4, updated_at = ?5 WHERE id = ?6`
 			)
-			.bind(input.title, description, publishedAt, now, id),
+			.bind(input.title, description, archetypesJson, publishedAt, now, id),
 	]);
 
-	const stored = await factsJson(db, id);
+	const stored = await factsJson(db, id, { ...row, archetypes: archetypesJson });
+
+	// A save can retire a question — a slot renamed, a declaration dropped, an
+	// archetype narrowed so a slot is no longer asked. The rating rows behind
+	// those questions are now unreachable: nothing will ever read them, nothing
+	// will ever move them, and they would sit in the table looking like data.
+	//
+	// So they are DELETED rather than left. Kept separate from the batch above
+	// on purpose — the save is the thing that must be atomic, and a sweep that
+	// failed would leave rows nobody reads rather than a torn set. It is also
+	// re-runnable: the next save of the same set sweeps whatever this one
+	// missed.
+	//
+	// `attempts` is deliberately NOT swept. It is the append-only ledger of
+	// what somebody actually answered and when, with the ratings before and
+	// after; that a question has since been retired does not make the answer
+	// untrue. Ratings are derived state and can be wrong; the ledger is
+	// history and can only be incomplete.
+	const sweep = deadRatingStatements(db, stored, priorIds, new Set(ids));
+	if (sweep.length > 0) await db.batch(sweep);
 
 	setEvent('replaced', writer, id, {
 		published: publishedAt !== null,

@@ -12,7 +12,13 @@
  * whole GET over one malformed row would take a readable set down with it.
  */
 
-import { expandFact, type QuestionDecl, type ResolvedVariant, type Slots } from './variants.js';
+import {
+	expandFact,
+	type Archetype,
+	type QuestionDecl,
+	type ResolvedVariant,
+	type Slots,
+} from './variants.js';
 import type { FactRow } from './types.js';
 
 /** A stored JSON object column, or null when it does not parse as one. */
@@ -64,11 +70,20 @@ export interface ReadFact {
 	questions: QuestionDecl[] | null;
 	detail: string | null;
 	attrs: Record<string, unknown> | null;
+	/** Which archetype this fact belongs to, or null for the implicit one. */
+	archetype: string | null;
 	/** Derived here and nowhere else. */
 	variants: ResolvedVariant[];
 }
 
-export function readFact(row: FactRow): ReadFact {
+/**
+ * Read one stored fact, expanding it against the archetype it belongs to.
+ *
+ * `askable` is the fact's archetype's `ask` list. Passing null asks every slot,
+ * which is what a set that declares no archetypes gets — and what every set got
+ * before archetypes existed.
+ */
+export function readFact(row: FactRow, askable: ReadonlySet<string> | null = null): ReadFact {
 	const slots = parseSlots(row.slots);
 	const questions = parseQuestions(row.questions);
 	return {
@@ -77,18 +92,47 @@ export function readFact(row: FactRow): ReadFact {
 		questions,
 		detail: row.detail,
 		attrs: parseObject(row.attrs),
-		variants: expandFact(slots, questions),
+		archetype: row.archetype,
+		variants: expandFact(slots, questions, askable),
 	};
+}
+
+/**
+ * The `ask` list for each declared archetype, by name.
+ *
+ * Built once per read of a set rather than per fact: every fact needs the same
+ * lookup, and the alternative is re-parsing the set's archetype JSON 22 times.
+ */
+export function askableByArchetype(
+	archetypes: Archetype[] | null
+): Map<string, ReadonlySet<string>> {
+	const out = new Map<string, ReadonlySet<string>>();
+	for (const archetype of archetypes ?? []) out.set(archetype.name, new Set(archetype.ask));
+	return out;
+}
+
+/** What a fact may be asked, given the set's archetypes. Null = anything. */
+export function askableFor(
+	row: { archetype: string | null },
+	byName: Map<string, ReadonlySet<string>>
+): ReadonlySet<string> | null {
+	if (row.archetype === null) return null;
+	// A fact naming an archetype the set does not declare is not an error here
+	// — the linter reports it on import. Falling back to "ask everything" keeps
+	// the fact playable rather than making it silently disappear.
+	return byName.get(row.archetype) ?? null;
 }
 
 /**
  * The version marker a file carries.
  *
- * 2 is facts. 1 was cards, and files in that shape still import — the client's
- * converter handles them, because plenty of them exist on people's disks and
- * refusing them would strand sets that convert perfectly.
+ * 3 is archetypes. 2 was facts without them and still imports — every fact
+ * joins one implicit archetype and the set plays as a one-column board. 1 was
+ * cards, and files in that shape still import too, via the client's converter,
+ * because plenty of them exist on people's disks and refusing them would
+ * strand sets that convert perfectly.
  */
-export const SET_FILE_VERSION = 2 as const;
+export const SET_FILE_VERSION = 3 as const;
 
 const SCHEMA_POINTER =
 	'https://hadoku.me/study/api/openapi.json#/components/schemas/CreateSetInput';
@@ -107,6 +151,10 @@ const SCHEMA_POINTER =
  */
 function factToFile(fact: ReadFact): SetFileFact {
 	const out: SetFileFact = { id: fact.id, slots: fact.slots };
+	// Second, and before the content: which column a fact belongs to is the
+	// first thing a reader of the file needs in order to make sense of its
+	// questions.
+	if (fact.archetype) out.archetype = fact.archetype;
 	if (fact.questions && fact.questions.length > 0) out.questions = fact.questions;
 	if (fact.detail) out.detail = fact.detail;
 	// Whole and unopened: nothing here knows which games exist, and copying the
@@ -127,6 +175,8 @@ function factToFile(fact: ReadFact): SetFileFact {
  */
 export interface SetFileFact {
 	id: string;
+	/** Omitted by a fact in the implicit archetype — there is nothing to name. */
+	archetype?: string;
 	slots: Slots;
 	questions?: QuestionDecl[];
 	detail?: string;
@@ -139,19 +189,29 @@ export interface SetFile {
 	title: string;
 	description: string | null;
 	published: boolean;
+	/** Omitted entirely by a set that declares none, so a simple set exports
+	 *  as simply as it did before archetypes existed. */
+	archetypes?: Archetype[];
 	facts: SetFileFact[];
 }
 
 export function toSetFile(
-	set: { title: string; description: string | null; published_at: number | null },
+	set: {
+		title: string;
+		description: string | null;
+		published_at: number | null;
+		archetypes?: Archetype[] | null;
+	},
 	facts: ReadFact[]
 ): SetFile {
+	const archetypes = set.archetypes ?? null;
 	return {
 		$schema: SCHEMA_POINTER,
 		formatVersion: SET_FILE_VERSION,
 		title: set.title,
 		description: set.description,
 		published: set.published_at !== null,
+		...(archetypes && archetypes.length > 0 ? { archetypes } : {}),
 		facts: facts.map(factToFile),
 	};
 }

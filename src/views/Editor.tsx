@@ -135,8 +135,12 @@ export function Editor({ client, existing, onSaved, onCancel }: EditorProps) {
    * batch is visible before it is saved rather than after it is played.
    */
   const report = useMemo(
-    () => lintSet(rows.filter(row => !isBlank(row)).map(row => row.fact)),
-    [rows]
+    () =>
+      lintSet(
+        rows.filter(row => !isBlank(row)).map(row => row.fact),
+        existing?.archetypes ?? []
+      ),
+    [rows, existing?.archetypes]
   )
   const advice = useMemo(() => boardAdvice(report), [report])
 

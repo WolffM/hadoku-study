@@ -33,6 +33,18 @@ export interface QuestionDecl {
 	seedTier?: number;
 }
 
+/**
+ * A kind of question, and one column of a board.
+ *
+ * Declared by the author. `ask` is the set of slots a question here may
+ * ANSWER; everything else on the fact is context only.
+ */
+export interface Archetype {
+	name: string;
+	label: string;
+	ask: string[];
+}
+
 export interface ResolvedVariant {
 	/** Stable across a rephrasing, different when the question differs. */
 	key: string;
@@ -106,8 +118,13 @@ export function variantKey(ask: string, given: string[]): string {
  * of them are ambiguous. Harder questions come from declaring fewer givens,
  * which is an authoring decision and not something to guess at.
  */
-export function defaultQuestions(slots: Slots): QuestionDecl[] {
-	return Object.keys(slots).map((ask) => ({ ask }));
+export function defaultQuestions(
+	slots: Slots,
+	askable: ReadonlySet<string> | null
+): QuestionDecl[] {
+	return Object.keys(slots)
+		.filter((ask) => askable === null || askable.has(ask))
+		.map((ask) => ({ ask }));
 }
 
 function clampTier(tier: number | undefined): number {
@@ -123,10 +140,26 @@ function clampTier(tier: number | undefined): number {
  * fact that renders no questions is a far worse outcome than one that renders
  * fewer. So a declaration whose `ask` slot is gone is SKIPPED, and a `given`
  * naming a slot that is gone simply loses that entry.
+ *
+ * `askable` is the fact's archetype's `ask` list — the slots that may be
+ * ANSWERED here. A declaration asking anything else is skipped, which is how a
+ * slot present on nearly every fact stops being a board column without being
+ * deleted: it is still stored, still shown as context, still exported. `null`
+ * means no archetype constrains this fact, which is what a set written before
+ * archetypes existed gets, and it asks everything as before.
+ *
+ * Filtering HERE rather than in the board is deliberate. The variant key is
+ * what ratings hang off; if the server kept generating a question the board
+ * refuses to show, the set would accumulate rating rows for questions nobody
+ * can reach.
  */
-export function expandFact(slots: Slots, questions: QuestionDecl[] | null): ResolvedVariant[] {
+export function expandFact(
+	slots: Slots,
+	questions: QuestionDecl[] | null,
+	askable: ReadonlySet<string> | null = null
+): ResolvedVariant[] {
 	const names = Object.keys(slots);
-	const decls = questions && questions.length > 0 ? questions : defaultQuestions(slots);
+	const decls = questions && questions.length > 0 ? questions : defaultQuestions(slots, askable);
 
 	const out: ResolvedVariant[] = [];
 	const seen = new Set<string>();
@@ -134,6 +167,10 @@ export function expandFact(slots: Slots, questions: QuestionDecl[] | null): Reso
 	for (const decl of decls) {
 		const answer = slots[decl.ask];
 		if (answer === undefined) continue;
+		// Declared, but not a slot this archetype answers. Skipped rather than
+		// rejected: an author narrowing an archetype's `ask` should not have
+		// every fact that still names the old slot refuse to load.
+		if (askable !== null && !askable.has(decl.ask)) continue;
 
 		// Author order for display, sorted only inside the key.
 		const wanted = decl.given ? new Set(decl.given) : null;

@@ -72,6 +72,8 @@ export interface AppEnv {
 export interface SetRow {
 	id: string;
 	owner_user_id: string;
+	/** JSON array of {name,label,ask[]}, or NULL for a set declaring none. */
+	archetypes: string | null;
 	title: string;
 	description: string | null;
 	published_at: number | null;
@@ -96,6 +98,12 @@ export interface FactRow {
 	id: string;
 	set_id: string;
 	position: number;
+	/**
+	 * Which archetype this fact belongs to, by name, or NULL for the implicit
+	 * one. Exactly one — a fact in two could be drawn into two board columns,
+	 * which is the scattering archetypes exist to end.
+	 */
+	archetype: string | null;
 	/** JSON object, slot name -> value. Insertion order is the author's order,
 	 *  and is preserved through JSON.parse, so it is also display order. */
 	slots: string;

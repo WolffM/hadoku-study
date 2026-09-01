@@ -13,7 +13,7 @@
  * whole shape of this: one output, many inputs.
  */
 
-import type { FactInput, QuestionInput } from './api/types'
+import type { Archetype, FactInput, QuestionInput } from './api/types'
 
 /** What a v1 card's two sides became. Named, because several places construct
  *  the pair and a typo in one of them is a silently broken import. */
@@ -124,6 +124,10 @@ function readFacts(value: unknown): FactInput[] {
       // Carried so a re-import keeps the set's rating history. A file that
       // never had one simply has no history to keep.
       if (typeof raw.id === 'string' && raw.id !== '') fact.id = raw.id
+      // Which column this fact belongs to. Absent in every v2 file, which is
+      // correct — those facts join the set's implicit archetype.
+      if (typeof raw.archetype === 'string' && raw.archetype.trim() !== '')
+        fact.archetype = raw.archetype.trim()
       const questions = readQuestions(raw.questions)
       if (questions) fact.questions = questions
       if (typeof raw.detail === 'string' && raw.detail.trim() !== '')
@@ -193,7 +197,31 @@ export interface ParsedImport {
    *  column, or a bare JSON array. The editor keeps whatever title it has. */
   title?: string
   description?: string | null
+  /** The columns the file declares. Absent in v1 and v2 files, which play as
+   *  a single implicit column until their author declares some. */
+  archetypes?: Archetype[]
   facts: FactInput[]
+}
+
+/**
+ * Read a file's declared archetypes.
+ *
+ * Permissive in the same way `readFacts` is: an entry missing a name or an
+ * `ask` list cannot be a column, so it is dropped rather than taking the whole
+ * import down. The linter is what tells the author about it — an import that
+ * throws teaches nothing and loses the paste.
+ */
+function readArchetypes(value: unknown): Archetype[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord).flatMap(raw => {
+    const name = typeof raw.name === 'string' ? raw.name.trim() : ''
+    const ask = Array.isArray(raw.ask)
+      ? raw.ask.filter((slot): slot is string => typeof slot === 'string' && slot.trim() !== '')
+      : []
+    if (name === '' || ask.length === 0) return []
+    const label = typeof raw.label === 'string' && raw.label.trim() !== '' ? raw.label.trim() : name
+    return [{ name, label, ask: ask.map(slot => slot.trim()) }]
+  })
 }
 
 export class SetFileError extends Error {}
@@ -244,10 +272,12 @@ export function parseImport(text: string): ParsedImport {
       throw new SetFileError('That JSON has no `facts` array — is it a set file?')
     }
 
+    const archetypes = readArchetypes(root.archetypes)
     return {
       title:
         typeof root.title === 'string' && root.title.trim() !== '' ? root.title.trim() : undefined,
       description: typeof root.description === 'string' ? root.description : undefined,
+      ...(archetypes.length > 0 ? { archetypes } : {}),
       facts
     }
   }

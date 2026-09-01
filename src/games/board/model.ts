@@ -18,6 +18,7 @@
  *   names and years is a quiz you can win without understanding anything.
  */
 
+import type { Archetype } from '../../api/types'
 import type { PlayCard } from '../../model/playCards'
 import { candidateCategories, chooseCategories, type Category } from './categories'
 import { DEFAULT_COLUMNS, DEFAULT_ROWS, dealCells } from './generate'
@@ -74,11 +75,10 @@ export interface BoardModel {
   maxScore: number
 }
 
-/** Below this a board is not a board — one column is the deck with points on
- *  it, which is what a plain flashcard set would otherwise get offered. */
-export const MIN_COLUMNS = 2
-
 export interface BoardOptions {
+  /** The set's declared columns. Headings come from here; without it a column
+   *  falls back to naming itself after the slot its questions ask. */
+  archetypes?: Archetype[] | null
   rankBy?: RankBy
   columns?: number
   rows?: number
@@ -87,15 +87,17 @@ export interface BoardOptions {
 export function buildBoard(cards: PlayCard[], options: BoardOptions = {}): BoardModel {
   const rankBy = options.rankBy ?? bySeedTier
   const rows = options.rows ?? DEFAULT_ROWS
-  const available = candidateCategories(cards)
+  const available = candidateCategories(cards, options.archetypes)
 
   // Enforced HERE, not in a separate `isPlayable` the caller has to remember
   // to ask. A predicate answering the same question from the same inputs is a
-  // second answer waiting to disagree — and it did: the game definition gated
-  // on `clueCount === 0` instead, so a set asking only ONE kind of question
-  // would have been offered a single-column board, which is the deck with a
-  // number on it.
-  if (available.length < MIN_COLUMNS) {
+  // second answer waiting to disagree.
+  //
+  // The bar used to be TWO columns, because a column was an asked slot and a
+  // one-column board was the whole deck with a number on it. A column is an
+  // archetype now, so one column is one kind of question the author chose —
+  // thin, but a real board. The only thing that cannot be dealt is nothing.
+  if (available.length === 0) {
     return { columns: [], clueCount: 0, unplaced: cards, maxScore: 0 }
   }
 
@@ -130,7 +132,7 @@ export function buildBoard(cards: PlayCard[], options: BoardOptions = {}): Board
       clueCount += 1
       maxScore += pointsFor(tier)
     })
-    columns.push({ slot: category.slot, label: category.label, cells })
+    columns.push({ slot: category.key, label: category.label, cells })
   })
 
   return {
@@ -148,14 +150,11 @@ export function buildBoard(cards: PlayCard[], options: BoardOptions = {}): Board
  * set of flashcards has only a front and a back, and a board needs questions
  * of DIFFERENT KINDS to make columns out of.
  */
-export function missingForBoard(cards: PlayCard[]): string | null {
+export function missingForBoard(cards: PlayCard[], archetypes?: Archetype[] | null): string | null {
   if (cards.length === 0) return 'Add some facts first.'
-  const candidates = candidateCategories(cards)
+  const candidates = candidateCategories(cards, archetypes)
   if (candidates.length === 0) {
     return 'These are plain flashcards. Give a fact real slots — who, what, where, when — and each one becomes a column.'
-  }
-  if (candidates.length < MIN_COLUMNS) {
-    return `Only one kind of question here (${candidates[0].label}). A board needs at least ${MIN_COLUMNS} kinds to make columns out of.`
   }
   return null
 }

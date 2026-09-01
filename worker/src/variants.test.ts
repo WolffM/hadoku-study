@@ -106,3 +106,48 @@ describe('expandFact', () => {
 		expect(absent.seedTier).toBe(DEFAULT_SEED_TIER);
 	});
 });
+
+/**
+ * An archetype narrows what a fact may be ASKED, and nothing else.
+ *
+ * The filter lives here rather than in the board because the variant key is
+ * what ratings hang off: a server that kept generating a question the board
+ * refuses to show would accumulate rating rows for questions nobody can reach.
+ */
+describe('expanding against an archetype', () => {
+	const slots = { who: 'Luther', what: 'refused to recant', where: 'Worms', when: '1521' };
+
+	it('asks everything when no archetype constrains the fact', () => {
+		// What every set got before archetypes existed, and what a set that
+		// declares none still gets.
+		const keys = expandFact(slots, null, null).map((v) => v.ask);
+		expect(keys.sort()).toEqual(['what', 'when', 'where', 'who']);
+	});
+
+	it('asks only the slots the archetype names', () => {
+		const asked = expandFact(slots, null, new Set(['who', 'where', 'when'])).map((v) => v.ask);
+		expect(asked.sort()).toEqual(['when', 'where', 'who']);
+	});
+
+	it('still SHOWS a slot it will not ask', () => {
+		// The whole point of demoting rather than deleting: `what` is on nearly
+		// every fact, so it makes a poor column and good context.
+		const [variant] = expandFact(slots, null, new Set(['who']));
+		expect(variant.given.map((g) => g.slot)).toContain('what');
+		expect(variant.answer).toBe('Luther');
+	});
+
+	it('skips a DECLARED question the archetype does not admit', () => {
+		// Narrowing an archetype must not make every fact still naming the old
+		// slot refuse to load.
+		const declared = [{ ask: 'what' }, { ask: 'when' }];
+		const asked = expandFact(slots, declared, new Set(['when'])).map((v) => v.ask);
+		expect(asked).toEqual(['when']);
+	});
+
+	it('yields nothing when the archetype admits none of the fact’s slots', () => {
+		// A fact that cannot answer its own column. The linter reports it on
+		// import; here it simply contributes no questions rather than throwing.
+		expect(expandFact(slots, null, new Set(['citation']))).toEqual([]);
+	});
+});

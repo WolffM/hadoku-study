@@ -23,9 +23,9 @@ export const boardGame: GameDefinition = {
   Preview: BoardPreview,
   availability: set => {
     const cards = toPlayCards(set.facts)
-    const board = buildBoard(cards)
+    const board = buildBoard(cards, { archetypes: set.archetypes })
     if (board.clueCount === 0) {
-      return { playable: false, blocked: missingForBoard(cards) ?? undefined }
+      return { playable: false, blocked: missingForBoard(cards, set.archetypes) ?? undefined }
     }
     return { playable: true }
   },

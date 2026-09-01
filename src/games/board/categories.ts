@@ -1,29 +1,33 @@
 /**
  * What a board's columns are made of.
  *
- * A category is the SLOT a column asks. "Name that year" is every question
- * whose answer is a `when`; "Who said it" is every `who`. That is not a
- * relabelling of the old per-fact category string — it is the thing that makes
- * a board generatable at all, because it can be computed from content nobody
- * had to tag.
+ * A category is one ARCHETYPE — a kind of question the author declared. Every
+ * question over a fact lives in that fact's column and nowhere else.
  *
- * It also makes the no-repeated-facts rule matter for the first time. Under
- * per-fact categories every question about one fact shared a column, so a fact
- * could only ever appear once anyway. Asking by slot scatters one fact's
- * questions across four different columns, and "where did Luther meet Charles
- * V" now genuinely can collide with "who did Luther meet at Worms".
+ * It used to be the asked SLOT, and that is what made a board feel like the
+ * same material four times over: `what` was on 20 of 22 facts in the reference
+ * set, `when` on ~17, so four columns drew from one pool and a 4x5 board
+ * consumed 20 of the 22 facts. The board WAS the set, sliced four ways.
+ *
+ * Grouping automatically was tried before declaring was: 16 distinct slot-sets
+ * and 16 distinct ask-sets over those 22 facts. Real authored content does not
+ * cluster, so the author names the column.
+ *
+ * The no-repeated-facts rule survives the change and gets easier: one fact
+ * belongs to one column, so columns can no longer compete for it.
  */
 
+import type { Archetype } from '../../api/types'
 import type { PlayCard } from '../../model/playCards'
 import { LEGACY_ANSWER_SLOT, LEGACY_PROMPT_SLOT } from '../../setFile'
 
 /**
- * How a slot reads as a column heading.
+ * How a slot reads as a column heading — the FALLBACK, for files written
+ * before archetypes existed and for the implicit column.
  *
- * Phrased as a category rather than as a question — a board's headings are
- * labels you scan, not prompts you answer. An unknown slot falls back to its
- * own name, which is right for the free-form ones: a set about Guild Wars maps
- * gets a column called "map", and that is exactly what it should say.
+ * A set that declares archetypes supplies its own labels and never reaches
+ * this table. Phrased as a category rather than a question, because a board's
+ * headings are labels you scan.
  */
 const LABELS: Record<string, string> = {
   who: 'Who was it?',
@@ -53,8 +57,9 @@ export const labelFor = (slot: string): string => LABELS[slot] ?? titleCase(slot
 const NOT_A_CATEGORY = new Set<string>([LEGACY_PROMPT_SLOT, LEGACY_ANSWER_SLOT])
 
 export interface Category {
-  /** The asked slot every question in this column shares. */
-  slot: string
+  /** The archetype every question in this column shares. `''` is the implicit
+   *  archetype a set that declares none puts every fact in. */
+  key: string
   label: string
   /** Questions available for this column, one entry per question — the same
    *  fact may appear more than once and is deduped when the board is filled. */
@@ -70,27 +75,60 @@ export interface Category {
  * Every column a set could offer, richest first.
  *
  * Ordered by how many distinct FACTS could fill the column, because that is
- * what decides whether it can be filled at all. Ties break on the slot name so
- * two runs of the same set produce the same board.
+ * what decides whether it can be filled at all. Ties break on the key so two
+ * runs of the same set produce the same board.
+ *
+ * `archetypes` is the set's declarations, used only for the heading — a column
+ * is discovered from the facts that claim it, so an archetype nobody uses
+ * yields no column rather than an empty one.
  */
-export function candidateCategories(cards: PlayCard[]): Category[] {
-  const bySlot = new Map<string, PlayCard[]>()
+export function candidateCategories(
+  cards: PlayCard[],
+  archetypes?: Archetype[] | null
+): Category[] {
+  const labels = new Map((archetypes ?? []).map(a => [a.name, a.label]))
+
+  const byArchetype = new Map<string, PlayCard[]>()
   for (const card of cards) {
     if (NOT_A_CATEGORY.has(card.ask)) continue
-    const existing = bySlot.get(card.ask)
+    // `''` rather than a name nobody chose: a set that declares no archetypes
+    // has one column, and giving it a made-up name would put that name in a
+    // heading somebody has to read.
+    const key = card.archetype ?? ''
+    const existing = byArchetype.get(key)
     if (existing) existing.push(card)
-    else bySlot.set(card.ask, [card])
+    else byArchetype.set(key, [card])
   }
 
-  return [...bySlot.entries()]
-    .map(([slot, group]) => ({
-      slot,
-      label: labelFor(slot),
+  return [...byArchetype.entries()]
+    .map(([key, group]) => ({
+      key,
+      label: headingFor(key, group, labels),
       cards: group,
       factCount: new Set(group.map(card => card.factId)).size,
       hasOpen: group.some(card => card.open)
     }))
-    .sort((a, b) => b.factCount - a.factCount || a.slot.localeCompare(b.slot))
+    .sort((a, b) => b.factCount - a.factCount || a.key.localeCompare(b.key))
+}
+
+/**
+ * A column's heading.
+ *
+ * The author's `label` when they declared one — this is the whole reason the
+ * built-in table below is a FALLBACK now rather than the vocabulary. A set
+ * about scripture calls its column whatever it likes.
+ *
+ * Two fallbacks, for files that predate archetypes: a column whose questions
+ * all ask the same slot is named for that slot, which is what every board did
+ * before; anything else is named for the set, because a mixed implicit column
+ * is the whole deck and saying so is honest.
+ */
+function headingFor(key: string, group: PlayCard[], labels: Map<string, string>): string {
+  const declared = labels.get(key)
+  if (declared) return declared
+  const asked = new Set(group.map(card => card.ask))
+  if (asked.size === 1) return labelFor([...asked][0])
+  return 'Everything'
 }
 
 /**

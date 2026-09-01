@@ -108,8 +108,13 @@ export interface Placement {
 export function dealCells(categories: Category[], rows: number, rankBy: RankBy): Placement[] {
   // Per column, the questions it could use — one per fact, easiest first.
   const pools = categories.map(category => bestPerFact(category.cards, rankBy))
+  // Keyed by COLUMN and fact, and the column key must be the same thing the
+  // lookup below uses. It was the asked slot on both sides while a column was
+  // a slot; it is the archetype on both sides now, and a mismatch here would
+  // silently place nothing.
   const byFact = new Map<string, PlayCard>()
-  for (const pool of pools) for (const card of pool) byFact.set(`${card.ask}:${card.factId}`, card)
+  for (const pool of pools)
+    for (const card of pool) byFact.set(`${card.archetype ?? ''}:${card.factId}`, card)
 
   const cells: Cell[] = []
   categories.forEach((_category, column) => {
@@ -137,7 +142,7 @@ export function dealCells(categories: Category[], rows: number, rankBy: RankBy):
   const placements: Placement[] = []
   for (const [factId, cell] of takenBy) {
     const column = cells[cell].column
-    const card = byFact.get(`${categories[column].slot}:${factId}`)
+    const card = byFact.get(`${categories[column].key}:${factId}`)
     if (card) placements.push({ column, card })
   }
   return placements

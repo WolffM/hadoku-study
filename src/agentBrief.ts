@@ -12,26 +12,58 @@
  * component is what makes prose go stale.
  */
 
-/** The slots the server can phrase without help. Mirrors KNOWN_SLOTS. */
+/** The slots the server can phrase without help. Mirrors KNOWN_SLOTS. These
+ *  are a CONVENIENCE, not a vocabulary — see the brief. */
 const PHRASEABLE = 'who, what, where, when, why, how, quote, term, definition'
 
 const BRIEF = `This is a hadoku study set, in exactly the format it imports from. Improve it:
 add facts, add angles to the facts already there, and write better questions.
 Return the whole document in the same shape, with nothing around it.
 
+THE SLOT NAMES ARE YOURS
+
+Nothing here is a fixed vocabulary. A set about scripture uses "citation" and
+"excerpt"; a set about maps uses "map" and "region". The nine names below are
+only the ones the server can phrase a question for when you write no prompt —
+any other name works and simply wants a prompt. Do not bend a set to fit them.
+
 WHAT A FACT IS
 
 A fact is ONE thing that is true — one event, person or idea — as a bundle of
 named slots. A question over it names one slot as the answer ("ask") and may
-show some of the others ("given").
+show some of the others ("given"). Each fact belongs to one ARCHETYPE.
 
-    { "id": "worms",
-      "slots": { "who": "Martin Luther", "what": "refused to recant",
-                 "where": "the Diet of Worms", "when": "1521" },
-      "questions": [
-        { "ask": "when", "given": [], "seedTier": 2,
-          "prompt": "In what year did Luther refuse to recant before the emperor?" }
-      ] }
+    { "archetypes": [
+        { "name": "event", "label": "Who, where, when",
+          "ask": ["who", "where", "when"] },
+        { "name": "scripture", "label": "Biblical references",
+          "ask": ["citation", "excerpt"] } ],
+
+      "facts": [
+        { "id": "worms",
+          "archetype": "event",
+          "slots": { "who": "Martin Luther", "what": "refused to recant",
+                     "where": "the Diet of Worms", "when": "1521" },
+          "questions": [
+            { "ask": "when", "given": [], "seedTier": 2,
+              "prompt": "In what year did Luther refuse to recant before the emperor?" }
+          ] } ] }
+
+WHAT AN ARCHETYPE IS
+
+A KIND of question, and one column of a board. You declare them; they are not
+derived from the content, because real sets do not cluster — 22 facts of this
+one produced 16 different slot combinations.
+
+"ask" is the whole mechanism: it lists the slots a question in that archetype
+may ANSWER. Every other slot on the fact is still stored, still shown as
+context, still studied — it just cannot be a column. That is how "what", which
+sits on nearly every fact and makes a terrible column, becomes good context
+instead. It is also how you retire an open-ended slot: leave "why" out of
+"ask" and it stops being a board answer without being deleted.
+
+A fact belongs to EXACTLY ONE archetype. That is the rule that stops a board
+feeling like the same material four times over.
 
 THE FIVE RULES THAT MATTER
 
@@ -76,15 +108,15 @@ THE REST
 - Slots phrased automatically if you omit a prompt:
   ${PHRASEABLE}.
   "why", "how" and "definition" are treated as answers you explain rather than
-  name. Any other slot name works and simply needs a prompt.
+  name. Any other slot name works and simply needs a prompt — see the top.
 - "seedTier" is 1-5 and only SEEDS difficulty. Play moves it from there, so an
   approximate tier is fine and a precise one is not worth agonising over.
 - "detail" is the context revealed AFTER the answer — the why, never the answer.
-- A BOARD COLUMN is an asked slot: every question answering "when" makes up
-  "Name that year". A full board is 4 columns of 5, and NO FACT IS ASKED TWICE
-  ON ONE BOARD — so a column needs 5 different facts that can answer it. Give
-  facts a spread of askable slots, and prefer adding slots to existing facts
-  over adding near-duplicate facts.
+- A BOARD COLUMN is an ARCHETYPE. A full board is up to 4 columns of 5, and NO
+  FACT IS ASKED TWICE ON ONE BOARD — so a column needs 5 different facts in
+  that archetype. One archetype is a one-column board, which is fine; four
+  well-populated ones is a full board. Prefer adding facts to a thin archetype
+  over adding a fifth archetype with two facts in it.
 - Mark a question "open": true when its answer is explained rather than named.
   A board guarantees one such column, so a set with none is poorer for it.
 

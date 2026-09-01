@@ -111,6 +111,37 @@ export const SlotsSchema = z
 	});
 
 /**
+ * An archetype: a KIND of question, and one column of a board.
+ *
+ * Declared by the author, never derived. Deriving was tried and measured
+ * against real authored data — 16 distinct slot-sets AND 16 distinct ask-sets
+ * over 22 facts, largest group 5 — so grouping by content yields one group per
+ * fact and no columns worth having.
+ *
+ * The vocabulary is the AUTHOR'S. `KNOWN_SLOTS` phrases nine common slots when
+ * no prompt is written and constrains nothing; a set about scripture declares
+ * `citation` and `excerpt` and gets a column called whatever it says.
+ */
+export const ArchetypeSchema = z
+	.object({
+		/** Referenced by `facts[].archetype`. Unique within the set. */
+		name: slotName,
+		/** The column heading, in the author's words. */
+		label: z.string().trim().min(1).max(MAX_FIELD_LENGTH),
+		/**
+		 * The slots a question in this archetype may ANSWER.
+		 *
+		 * This is the whole mechanism. A slot left out can still be written,
+		 * shown as context and studied — it simply cannot be a board column. It
+		 * is how a set demotes a slot that is on nearly every fact without
+		 * deleting it, and how a set retires an open-ended slot for itself
+		 * rather than having the server decide for everyone.
+		 */
+		ask: z.array(slotName).min(1).max(MAX_SLOTS_PER_FACT),
+	})
+	.openapi('Archetype');
+
+/**
  * One declared question over a fact.
  *
  * `given` omitted means every other slot — the safe default, since a question
@@ -260,6 +291,15 @@ const factInput = z.object({
 	 * file cannot adopt another set's history.
 	 */
 	id: z.string().max(64).optional(),
+	/**
+	 * Which declared archetype this fact belongs to, by `name`.
+	 *
+	 * Exactly one, or none — omitted joins the set's implicit archetype, which
+	 * is how a file written before archetypes existed still plays. A fact in
+	 * two archetypes could be drawn into two columns, which is the scattering
+	 * archetypes exist to end.
+	 */
+	archetype: z.string().trim().min(1).max(MAX_SLOT_NAME_LENGTH).nullable().optional(),
 	slots: SlotsSchema,
 	questions: z.array(QuestionSchema).max(MAX_QUESTIONS_PER_FACT).nullable().optional().openapi({
 		description:
@@ -289,6 +329,12 @@ export const CreateSetInputSchema = z
 	.object({
 		title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
 		description: z.string().trim().max(MAX_DESCRIPTION_LENGTH).nullable().optional(),
+		/**
+		 * The board columns this set offers. Omit for a set that declares none —
+		 * every fact then joins one implicit archetype and the set plays as a
+		 * one-column board, which is a legitimate board.
+		 */
+		archetypes: z.array(ArchetypeSchema).max(16).nullable().optional(),
 		/** Optional so a paste-import lands as one request rather than two. */
 		facts: z.array(factInput).max(MAX_FACTS_PER_SET).optional(),
 		/**
@@ -317,6 +363,12 @@ export const ReplaceSetInputSchema = z
 	.object({
 		title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
 		description: z.string().trim().max(MAX_DESCRIPTION_LENGTH).nullable().optional(),
+		/**
+		 * The board columns this set offers. Omit for a set that declares none —
+		 * every fact then joins one implicit archetype and the set plays as a
+		 * one-column board, which is a legitimate board.
+		 */
+		archetypes: z.array(ArchetypeSchema).max(16).nullable().optional(),
 		facts: z.array(factInput).max(MAX_FACTS_PER_SET),
 		published: z.boolean().optional(),
 	})
@@ -520,13 +572,15 @@ export const DeleteResponseSchema = SuccessResponseSchema(z.object({ setId: z.st
 export const SetFileSchema = z
 	.object({
 		$schema: z.string(),
-		formatVersion: z.literal(2),
+		formatVersion: z.literal(3),
 		title: z.string(),
 		description: z.string().nullable(),
 		published: z.boolean(),
+		archetypes: z.array(ArchetypeSchema).optional(),
 		facts: z.array(
 			z.object({
 				id: z.string(),
+				archetype: z.string().optional(),
 				slots: SlotsSchema,
 				questions: z.array(QuestionSchema).optional(),
 				detail: z.string().optional(),

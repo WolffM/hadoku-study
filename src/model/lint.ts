@@ -14,7 +14,7 @@
  * it is played.
  */
 
-import type { FactInput, QuestionInput } from '../api/types'
+import type { Archetype, FactInput, QuestionInput } from '../api/types'
 import { KNOWN_SLOTS } from './slots'
 
 export type Severity = 'error' | 'warning'
@@ -154,27 +154,110 @@ export interface SetReport {
 const BOARD_COLUMNS = 4
 const BOARD_ROWS = 5
 
-export function lintSet(facts: FactInput[]): SetReport {
-  const findings = facts.flatMap((fact, index) => lintFact(fact, index))
+/**
+ * What an author gets wrong about archetypes, in the place they find out.
+ *
+ * Every rule here is one the file format allows and the board cannot use, so
+ * failing the import would be too harsh and staying silent would leave a
+ * column mysteriously empty. They are reported against the fact, because that
+ * is the thing the author has to edit.
+ */
+function lintArchetypes(facts: FactInput[], archetypes: Archetype[]): Finding[] {
+  if (archetypes.length === 0) return []
+  const findings: Finding[] = []
+  const byName = new Map(archetypes.map(a => [a.name, a]))
 
-  const bySlot = new Map<string, Set<string>>()
-  let questions = 0
+  const seen = new Set<string>()
+  for (const archetype of archetypes) {
+    if (seen.has(archetype.name)) {
+      findings.push({
+        severity: 'error',
+        factIndex: -1,
+        message: `Two archetypes are both called "${archetype.name}". Two columns with one identity is one column that eats both.`
+      })
+    }
+    seen.add(archetype.name)
+  }
+
   facts.forEach((fact, index) => {
-    const asked = fact.questions?.length
-      ? [...new Set(fact.questions.map(question => question.ask))]
-      : Object.keys(fact.slots)
-    questions += fact.questions?.length ?? Object.keys(fact.slots).length
-    for (const ask of asked) {
-      if (!(ask in fact.slots)) continue
-      const holder = bySlot.get(ask) ?? new Set<string>()
-      holder.add(fact.id ?? `#${index}`)
-      bySlot.set(ask, holder)
+    if (!fact.archetype) return
+    const archetype = byName.get(fact.archetype)
+    if (!archetype) {
+      findings.push({
+        severity: 'error',
+        factIndex: index,
+        message: `No archetype called "${fact.archetype}" is declared, so this fact belongs to no column and would never appear on a board.`
+      })
+      return
+    }
+
+    const askable = new Set(archetype.ask)
+    const answerable = archetype.ask.filter(slot => slot in fact.slots)
+    if (answerable.length === 0) {
+      findings.push({
+        severity: 'error',
+        factIndex: index,
+        message: `This fact is in "${archetype.name}" but has none of the slots that archetype asks (${archetype.ask.join(', ')}), so it cannot answer its own column.`
+      })
+    }
+
+    for (const question of fact.questions ?? []) {
+      if (!askable.has(question.ask)) {
+        findings.push({
+          severity: 'warning',
+          factIndex: index,
+          message: `"${question.ask}" is not asked by the "${archetype.name}" archetype, so this question will not be generated. Add it to the archetype's ask list, or drop the question.`
+        })
+      }
     }
   })
 
-  const columns = [...bySlot.entries()]
+  return findings
+}
+
+export function lintSet(facts: FactInput[], archetypes: Archetype[] = []): SetReport {
+  const findings = [
+    ...facts.flatMap((fact, index) => lintFact(fact, index)),
+    ...lintArchetypes(facts, archetypes)
+  ]
+
+  // A column is an archetype. With none declared every fact joins one
+  // implicit column, which is what a set written before archetypes gets.
+  const askableFor = new Map(archetypes.map(a => [a.name, new Set(a.ask)]))
+  const byColumn = new Map<string, Set<string>>()
+  let questions = 0
+  facts.forEach((fact, index) => {
+    const askable = fact.archetype ? askableFor.get(fact.archetype) : undefined
+    const asked = (
+      fact.questions?.length
+        ? [...new Set(fact.questions.map(question => question.ask))]
+        : Object.keys(fact.slots)
+    ).filter(ask => ask in fact.slots && (askable === undefined || askable.has(ask)))
+    questions += asked.length
+    if (asked.length === 0) return
+    const key = fact.archetype ?? ''
+    const holder = byColumn.get(key) ?? new Set<string>()
+    holder.add(fact.id ?? `#${index}`)
+    byColumn.set(key, holder)
+  })
+
+  const columns = [...byColumn.entries()]
     .map(([slot, ids]) => ({ slot, facts: ids.size }))
     .sort((a, b) => b.facts - a.facts || a.slot.localeCompare(b.slot))
+
+  // A column wants a full ladder. Short is playable, so this is a warning —
+  // telling an author their board will be thin is useful; refusing to deal it
+  // is not.
+  for (const column of columns) {
+    if (column.facts < BOARD_ROWS) {
+      const named = column.slot === '' ? 'This set' : `Archetype "${column.slot}"`
+      findings.push({
+        severity: 'warning',
+        factIndex: -1,
+        message: `${named} has ${column.facts} fact${column.facts === 1 ? '' : 's'} that can answer it; a full column holds ${BOARD_ROWS}.`
+      })
+    }
+  }
 
   return { findings, facts: facts.length, questions, columns }
 }
@@ -188,8 +271,14 @@ export function lintSet(facts: FactInput[]): SetReport {
 export function boardAdvice(report: SetReport): string | null {
   const deep = report.columns.filter(column => column.facts >= BOARD_ROWS)
   if (deep.length >= BOARD_COLUMNS) return null
-  if (report.columns.length < 2) {
-    return 'This set asks only one kind of question, so it cannot be played as a board. Give facts a spread of slots — who, what, where, when, why.'
+  if (report.columns.length === 0) return 'Nothing here can answer a question yet.'
+
+  // A column is an archetype now, so the advice names the thing the author
+  // would actually add. It used to say "give facts a spread of slots", which
+  // was the exact instruction that produced a set where every column asked
+  // the same 22 facts a different way.
+  if (report.columns.length === 1 && report.columns[0].slot === '') {
+    return `This set declares no archetypes, so it plays as one column. Declare a few — each is a kind of question, and each becomes a column — and give every fact one.`
   }
-  return `${deep.length} of ${BOARD_COLUMNS} columns are deep enough for a full board. A column needs ${BOARD_ROWS} different facts that can answer it, and no fact is asked twice on one board.`
+  return `${deep.length} of ${BOARD_COLUMNS} columns are deep enough for a full board. A column needs ${BOARD_ROWS} different facts in that archetype, and no fact is asked twice on one board.`
 }

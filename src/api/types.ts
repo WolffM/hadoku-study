@@ -54,8 +54,24 @@ export interface StudyVariant {
  * this replaced a front/back row — front and back are a way of DRAWING a
  * variant, not a shape anything is stored in.
  */
+/**
+ * A kind of question, and one board column.
+ *
+ * Declared by the author, never derived — deriving was measured against real
+ * authored data and produced one group per fact. `ask` is the set of slots a
+ * question here may ANSWER; every other slot on the fact is context only.
+ */
+export interface Archetype {
+  name: string
+  /** The column heading, in the author's words. */
+  label: string
+  ask: string[]
+}
+
 export interface StudyFact {
   id: string
+  /** Which archetype this fact belongs to. Absent joins the implicit one. */
+  archetype?: string | null
   slots: Record<string, string>
   /**
    * The declarations as AUTHORED — null when the fact declares none.
@@ -78,6 +94,9 @@ export interface StudySet {
   title: string
   description: string | null
   published: boolean
+  /** The columns this set offers. Absent on list entries and on a set that
+   *  declares none, which plays as a single implicit column. */
+  archetypes?: Archetype[] | null
   factCount: number
   /** Absent on list entries — counting it means expanding every fact, and
    *  deriving it in SQL would be a second copy of the expansion rule. */
@@ -160,6 +179,8 @@ export interface QuestionInput {
 }
 
 export interface FactInput {
+  /** Which archetype this fact belongs to, by name. */
+  archetype?: string | null
   /**
    * The id this fact already has, sent back so a save keeps its rating history.
    *

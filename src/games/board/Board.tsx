@@ -73,8 +73,8 @@ export function Board({ set, client, syncEnabled, onExit }: GameProps) {
     // by seed tier.
     const rankBy: RankBy =
       ratings.size > 0 ? card => ratings.get(card.id)?.local ?? card.seedTier : bySeedTier
-    return buildBoard(cards, { rankBy })
-  }, [cards, ratings])
+    return buildBoard(cards, { archetypes: set.archetypes, rankBy })
+  }, [cards, ratings, set.archetypes])
   // question id -> clue, so scoring is a lookup rather than a scan for every
   // graded answer.
   const clues = useMemo(() => {

@@ -28,6 +28,7 @@ export function variant(over: Partial<StudyVariant> = {}): StudyVariant {
 
 export function fact(over: Partial<StudyFact> & { id: string }): StudyFact {
   return {
+    archetype: null,
     slots: { prompt: 'front', answer: 'back' },
     questions: null,
     detail: null,
@@ -47,17 +48,19 @@ export const flashcard = (id: string, front = 'front', back = 'back'): StudyFact
   })
 
 /**
- * A fact that can fill a board column asking `ask`.
+ * A fact that can fill a board column, asking `ask`.
  *
- * A board's columns ARE asked slots now, so a fixture for "a clue in the
- * Places column" is a fact whose question asks `where`. It carries a second
- * slot because a fact needs something to withhold and something to show.
+ * A column is an ARCHETYPE now, so `over.archetype` is what decides which
+ * column this fact lands in; `ask` decides what the question answers. They
+ * were the same thing while a column was a slot, which is why so many tests
+ * read as though they still are. A fact carries a second slot because it
+ * needs something to withhold and something to show.
  */
 export const asks = (
   id: string,
   ask: string,
   tier = 3,
-  over: { open?: boolean; also?: string[] } = {}
+  over: { open?: boolean; also?: string[]; archetype?: string | null } = {}
 ): StudyFact => {
   const extra = over.also ?? []
   const slots: Record<string, string> = { context: `context for ${id}`, [ask]: `${ask} of ${id}` }
@@ -65,6 +68,7 @@ export const asks = (
   const asked = [ask, ...extra]
   return fact({
     id,
+    archetype: over.archetype ?? null,
     slots,
     questions: asked.map(name => ({ ask: name, seedTier: tier })),
     variants: asked.map(name =>

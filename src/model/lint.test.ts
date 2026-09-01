@@ -169,13 +169,67 @@ describe('the whole set', () => {
   })
 
   it('counts what is there and which columns it could offer', () => {
+    // A column is an ARCHETYPE. These three facts ask different slots and
+    // declare no archetype, so they are one implicit column — which is the
+    // whole point: they used to read as two columns over three facts.
     const report = lintSet([asking('a', 'when'), asking('b', 'when'), asking('c', 'who')])
     expect(report.facts).toBe(3)
     expect(report.questions).toBe(3)
+    expect(report.columns).toEqual([{ slot: '', facts: 3 }])
+  })
+
+  it('counts a column per declared archetype', () => {
+    const archetypes = [
+      { name: 'dates', label: 'Name that year', ask: ['when'] },
+      { name: 'people', label: 'Who was it', ask: ['who'] }
+    ]
+    const report = lintSet(
+      [
+        { ...asking('a', 'when'), archetype: 'dates' },
+        { ...asking('b', 'when'), archetype: 'dates' },
+        { ...asking('c', 'who'), archetype: 'people' }
+      ],
+      archetypes
+    )
     expect(report.columns).toEqual([
-      { slot: 'when', facts: 2 },
-      { slot: 'who', facts: 1 }
+      { slot: 'dates', facts: 2 },
+      { slot: 'people', facts: 1 }
     ])
+  })
+
+  it('reports a fact pointing at an archetype nobody declared', () => {
+    const report = lintSet([{ ...asking('a', 'when'), archetype: 'ghost' }], [])
+    // No archetypes declared at all means nothing to check against — the set
+    // is simply pre-archetype. The check needs a declaration to disagree with.
+    expect(report.findings.some(f => f.message.includes('No archetype called'))).toBe(false)
+
+    const declared = lintSet(
+      [{ ...asking('a', 'when'), archetype: 'ghost' }],
+      [{ name: 'dates', label: 'Dates', ask: ['when'] }]
+    )
+    expect(declared.findings.some(f => f.severity === 'error' && f.message.includes('ghost'))).toBe(
+      true
+    )
+  })
+
+  it('reports a fact that cannot answer its own column', () => {
+    const report = lintSet(
+      [{ ...asking('a', 'when'), archetype: 'scripture' }],
+      [{ name: 'scripture', label: 'Biblical references', ask: ['citation'] }]
+    )
+    expect(
+      report.findings.some(f => f.severity === 'error' && f.message.includes('cannot answer'))
+    ).toBe(true)
+  })
+
+  it('warns about a question the archetype will not generate', () => {
+    const report = lintSet(
+      [{ ...asking('a', 'when'), archetype: 'dates' }],
+      [{ name: 'dates', label: 'Dates', ask: ['who'] }]
+    )
+    expect(
+      report.findings.some(f => f.severity === 'warning' && f.message.includes('not asked by'))
+    ).toBe(true)
   })
 
   it('numbers findings by position, the only handle a new fact has', () => {
@@ -185,17 +239,32 @@ describe('the whole set', () => {
   })
 
   it('says when a set cannot fill a board, and why', () => {
-    const oneKind = [asking('a', 'when'), asking('b', 'when')]
-    expect(boardAdvice(lintSet(oneKind))).toContain('only one kind of question')
+    const noArchetypes = [asking('a', 'when'), asking('b', 'when')]
+    expect(boardAdvice(lintSet(noArchetypes))).toContain('declares no archetypes')
 
-    const thin = ['when', 'who', 'where', 'why'].map((slot, i) => asking(`f${i}`, slot))
-    expect(boardAdvice(lintSet(thin))).toContain('deep enough')
+    const archetypes = ['a', 'b', 'c', 'd'].map(name => ({
+      name,
+      label: name,
+      ask: ['when']
+    }))
+    const thin = archetypes.map((a, i) => ({ ...asking(`f${i}`, 'when'), archetype: a.name }))
+    expect(boardAdvice(lintSet(thin, archetypes))).toContain('deep enough')
   })
 
   it('says nothing when a full board can be dealt', () => {
-    const plenty = ['when', 'who', 'where', 'why'].flatMap(slot =>
-      Array.from({ length: 5 }, (_, i) => asking(`${slot}${i}`, slot))
+    // Four archetypes of five facts each. It used to be four SLOTS of five,
+    // which is the same set of facts and a very different board.
+    const archetypes = ['dates', 'people', 'places', 'reasons'].map(name => ({
+      name,
+      label: name,
+      ask: ['when']
+    }))
+    const plenty = archetypes.flatMap(archetype =>
+      Array.from({ length: 5 }, (_, i) => ({
+        ...asking(`${archetype.name}${i}`, 'when'),
+        archetype: archetype.name
+      }))
     )
-    expect(boardAdvice(lintSet(plenty))).toBeNull()
+    expect(boardAdvice(lintSet(plenty, archetypes))).toBeNull()
   })
 })

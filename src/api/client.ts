@@ -10,6 +10,7 @@
 import { logger } from '@wolffm/logger/client'
 import { getSessionId } from './session'
 import type {
+  Archetype,
   AttemptInput,
   FactInput,
   QuestionRating,
@@ -153,6 +154,7 @@ export function createClient(base: string) {
     createSet: (input: {
       title: string
       description?: string | null
+      archetypes?: Archetype[] | null
       facts?: FactInput[]
       published?: boolean
     }) =>
@@ -178,6 +180,9 @@ export function createClient(base: string) {
       input: {
         title: string
         description?: string | null
+        /** Omitted leaves the set with none, which is a one-column board —
+         *  a PUT replaces the whole set, archetypes included. */
+        archetypes?: Archetype[] | null
         facts: FactInput[]
         published?: boolean
       }
