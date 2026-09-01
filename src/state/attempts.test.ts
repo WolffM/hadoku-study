@@ -135,7 +135,7 @@ describe('the queue', () => {
 describe('recording an answer', () => {
   const attempt: AttemptInput = { factId: 'f1', variantKey: 'answer<prompt>', result: 'got' }
 
-  it('sends nothing at all when the reader has no identity', async () => {
+  it('holds the answer when the reader has no identity, rather than dropping it', async () => {
     const send = vi.fn()
     const result = await recordAttempt(
       { client: clientWith(send), setId: 's1', game: 'drill', enabled: false },
@@ -143,9 +143,36 @@ describe('recording an answer', () => {
     )
     expect(result).toBeNull()
     expect(send).not.toHaveBeenCalled()
-    // And nothing is queued either — a signed-out reader has nothing to flush
-    // to later, so a queue would grow forever and never drain.
+    // This used to assert the answer was DISCARDED, on the reasoning that a
+    // signed-out queue "would grow forever and never drain". It is bounded by
+    // OUTBOX_LIMIT either way, and signing in is precisely how it drains.
+    expect(readOutbox()).toEqual([{ ...attempt, setId: 's1', game: 'drill' }])
+  })
+
+  it('sends what was graded before sign-in on the first enabled send', async () => {
+    // The case the drop was losing: play, then sign in. Both answers land, and
+    // the pre-sign-in one comes first because it happened first.
+    await recordAttempt(
+      { client: clientWith(vi.fn()), setId: 's1', game: 'drill', enabled: false },
+      { factId: 'before', variantKey: 'answer<prompt>', result: 'missed' }
+    )
+    const send = vi.fn().mockResolvedValue([])
+    await recordAttempt(
+      { client: clientWith(send), setId: 's1', game: 'drill', enabled: true },
+      attempt
+    )
+    const [, , batch] = send.mock.calls[0] as [string, string, AttemptInput[]]
+    expect(batch.map(entry => entry.factId)).toEqual(['before', 'f1'])
     expect(readOutbox()).toEqual([])
+  })
+
+  it('holds a disabled answer per set, leaving another set’s alone', async () => {
+    await recordAttempt(
+      { client: clientWith(vi.fn()), setId: 's2', game: 'drill', enabled: false },
+      attempt
+    )
+    expect(heldFor('s1')).toHaveLength(0)
+    expect(heldFor('s2')).toHaveLength(1)
   })
 
   it('returns the new ratings on success', async () => {

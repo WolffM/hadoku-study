@@ -7,11 +7,12 @@
  * mode gets it by construction.
  *
  * The outbox is the reason this is not a bare `fetch`. Answers are graded on a
- * phone, often on a train, and a failed POST must not cost the answer: a
- * rejected attempt is queued in localStorage and flushed on the next call that
- * succeeds. Losing one answer is invisible — the rating is simply a little
- * wrong forever — which is precisely why it needs handling rather than a
- * `.catch(() => undefined)`.
+ * phone, often on a train, and a send that cannot happen must not cost the
+ * answer: it is queued in localStorage and flushed on the next call that
+ * succeeds. Two things cannot happen — a POST that fails, and a reader with no
+ * identity yet — and both hold rather than drop. Losing one answer is invisible
+ * — the rating is simply a little wrong forever — which is precisely why it
+ * needs handling rather than a `.catch(() => undefined)`.
  */
 
 import { z } from 'zod'
@@ -93,8 +94,8 @@ export interface RecordOptions {
   client: StudyClient
   setId: string
   game: string
-  /** Whether the server can hold this reader's answers at all. Signed-out
-   *  readers have no identity to attribute one to. */
+  /** Whether the server can hold this reader's answers RIGHT NOW. False means
+   *  hold, not discard — see {@link recordAttempt}. */
   enabled: boolean
 }
 
@@ -107,13 +108,35 @@ export interface RecordOptions {
  *
  * Never throws. A caller is a grade handler in the middle of a game, and a
  * rejected promise there would take the pass down over a bookkeeping failure.
+ *
+ * A reader with no identity is HELD, not dropped. This used to return early
+ * and discard the answer, reasoning that "a signed-out reader has nothing to
+ * flush to later, so a queue would grow forever and never drain". Half of that
+ * was wrong: `writeOutbox` slices to {@link OUTBOX_LIMIT}, so the queue is
+ * bounded at 200 whether it drains or not. The other half undervalued the case
+ * it describes — signing in is exactly how a reader stops being signed-out,
+ * and the answers graded on the way there are the ones that say what they
+ * already knew. Dropping them also contradicted this module's own premise,
+ * that a send which cannot happen must not cost the answer.
+ *
+ * The residual is a shared browser: answers graded anonymously are attributed
+ * to whoever signs in next on that device. Bounded by OUTBOX_LIMIT and by what
+ * a rating is — a `got`/`missed` on a published set — but it is the same shape
+ * as the prefs `anon` scope bug (packages/prefs-client whoami.ts), and if that
+ * matters here the fix is theirs: an explicit one-way promotion on sign-in
+ * rather than an implicit flush.
  */
 export async function recordAttempt(
   options: RecordOptions,
   attempt: AttemptInput
 ): Promise<QuestionRatingChange[] | null> {
   const { client, setId, game, enabled } = options
-  if (!enabled) return null
+  // Held rather than sent: there is no identity to attribute it to yet, and
+  // the next enabled send for this set carries it.
+  if (!enabled) {
+    enqueue({ ...attempt, setId, game })
+    return null
+  }
 
   const held = heldFor(setId)
   const batch: AttemptInput[] = [...held, attempt]
