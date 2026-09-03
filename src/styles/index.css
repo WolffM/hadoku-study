@@ -1100,14 +1100,10 @@
   border-radius: var(--hdk-radius);
 }
 
-.standing__head {
+.standing__sub {
   margin: 0 0 var(--hdk-space-xs);
   font-size: var(--hdk-text-sm);
   color: var(--color-text-secondary);
-}
-
-.standing__sub {
-  margin-top: var(--hdk-space-sm);
 }
 
 .editor__row-tools {
