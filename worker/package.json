@@ -1,6 +1,6 @@
 {
 	"name": "@wolffm/study-worker",
-	"version": "1.1.0",
+	"version": "1.1.1",
 	"description": "Study sets, questions and ratings — the API behind @wolffm/study",
 	"type": "module",
 	"repository": {

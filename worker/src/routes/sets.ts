@@ -577,6 +577,56 @@ app.openapi(getFileRoute, async (c) => {
 	return c.json(toSetFile({ ...row, archetypes }, facts), 200);
 });
 
+/**
+ * Load a set this caller may WRITE, honouring elevated tiers.
+ *
+ * Owner, or SERVICE and above. The tier ladder is
+ * `public < friend < service < wife < admin`, so this admits every machine
+ * credential and every human tier above friend, and holds an ordinary friend
+ * to the set they own.
+ *
+ * The reason is agents. An agent restructuring somebody's set holds a service
+ * key and is not the owner, so an owner-only gate made the API unusable for
+ * exactly the work it exists to support — the set has to be edited by hand or
+ * not at all. Reading was never the problem; writing was.
+ *
+ * Two properties this deliberately does NOT change:
+ *   - Ownership does not move. An elevated write updates content and leaves
+ *     `owner_user_id` alone, so editing a set is not a way to take it. Taking
+ *     one is still `POST /sets/{id}/owner`, still admin-only.
+ *   - A friend-tier caller still gets the same 404 for someone else's set as
+ *     for one that does not exist, so probing ids reveals nothing.
+ *
+ * Every write is attributed either way: `setEvent` records the caller's own
+ * userId, so an elevated edit is visible as having been made by that key
+ * rather than by the owner.
+ *
+ * Deliberately a separate call rather than a flag on `loadSetForWrite` — see
+ * the note there. A boolean that turns an access check off is a boolean
+ * somebody eventually passes by accident.
+ */
+async function loadSetForWriteAtTier(
+	c: { get: (key: 'authContext') => HadokuAuthContext | undefined },
+	db: D1Database,
+	setId: string,
+	userId: string
+): Promise<SetRow | null> {
+	if (mayWriteAnySet(c.get('authContext'))) return loadSetById(db, setId);
+	return loadSetForWrite(db, setId, userId);
+}
+
+/**
+ * Whether this caller may write a set it does not own.
+ *
+ * By RANK, never by equality. `userType === 'service'` would lock out `wife`
+ * and `admin`, which both outrank it — the bug this ecosystem has shipped
+ * twice, and the reason `tierAtLeast` exists at all. Exported so the policy
+ * has a test of its own rather than living only inside a loader.
+ */
+export function mayWriteAnySet(auth: HadokuAuthContext | undefined): boolean {
+	return tierAtLeast(auth, 'service');
+}
+
 // ============================================================================
 // PATCH /sets/:id — rename, re-describe, publish/unpublish
 // ============================================================================
@@ -587,7 +637,7 @@ const updateSetRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Update a set',
 	description:
-		'Owner only, and a PARTIAL update — omitted fields are left alone, and facts are untouched. To write a whole set back from a file, use PUT instead. `published` is a per-set flag, not a separate copy: flipping it changes who may read the same rows.',
+		'Owner, or service tier and above. A PARTIAL update — omitted fields are left alone, and facts are untouched. To write a whole set back from a file, use PUT instead. `published` is a per-set flag, not a separate copy: flipping it changes who may read the same rows.',
 	security: AUTHENTICATED,
 	request: {
 		params: z.object({ id: z.string() }),
@@ -615,7 +665,7 @@ app.openapi(updateSetRoute, async (c) => {
 	const patch = c.req.valid('json');
 	const db = c.env.STUDY_DB;
 
-	const row = await loadSetForWrite(db, id, writer.userId);
+	const row = await loadSetForWriteAtTier(c, db, id, writer.userId);
 	if (!row) return notFoundWrapped(c, 'Set');
 
 	const now = Date.now();
@@ -663,7 +713,7 @@ const replaceSetRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Replace a whole set',
 	description:
-		'Owner only. The single-file format written back over an existing set: title, description and every fact in ONE request and ONE transaction. Send each fact back with the `id` it was exported with — an id that already belongs to this set is kept, which is what preserves the ratings hanging off it; anything else is minted fresh. Omitting `published` leaves visibility alone: a file describes content, and must not be able to silently unshare a set.',
+		'Owner, or service tier and above — an agent holding a service key can rewrite a set it does not own, and doing so does not transfer ownership. The single-file format written back over an existing set: title, description and every fact in ONE request and ONE transaction. Send each fact back with the `id` it was exported with — an id that already belongs to this set is kept, which is what preserves the ratings hanging off it; anything else is minted fresh. Omitting `published` leaves visibility alone: a file describes content, and must not be able to silently unshare a set.',
 	security: AUTHENTICATED,
 	request: {
 		params: z.object({ id: z.string() }),
@@ -694,7 +744,7 @@ app.openapi(replaceSetRoute, async (c) => {
 	const input = c.req.valid('json');
 	const db = c.env.STUDY_DB;
 
-	const row = await loadSetForWrite(db, id, writer.userId);
+	const row = await loadSetForWriteAtTier(c, db, id, writer.userId);
 	if (!row) return notFoundWrapped(c, 'Set');
 
 	const now = Date.now();
@@ -877,7 +927,7 @@ const deleteSetRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Delete a set',
 	description:
-		'Owner only. Facts, ratings, attempt history and every reader’s saved progress go with it.',
+		'Owner only — deletion is not extended to service tier the way editing is, because an edit is recoverable from an export and a delete is not. Facts, ratings, attempt history and every reader’s saved progress go with it.',
 	security: AUTHENTICATED,
 	request: { params: z.object({ id: z.string() }) },
 	responses: {
