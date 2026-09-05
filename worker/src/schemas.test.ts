@@ -20,19 +20,21 @@ const worms = {
 };
 
 /** Exactly the shape `GET /sets/{id}` puts in `data.set`. */
-const exported = SetDetailSchema.parse({
+const raw = {
 	id: 'qvv7k2mfjxtd',
 	title: 'The Reformation',
 	description: 'Luther to Augsburg',
 	published: true,
 	factCount: 2,
 	variantCount: 3,
+	archetypes: [{ name: 'event', label: 'Who, where, when', ask: ['who', 'where', 'when'] }],
 	isOwner: true,
 	createdAt: '2026-08-18T00:00:00.000Z',
 	updatedAt: '2026-08-18T00:00:00.000Z',
 	facts: [
 		{
 			id: 'fact-one',
+			archetype: 'event',
 			slots: worms,
 			questions: [{ ask: 'when', given: ['where'], prompt: 'In what year?', seedTier: 2 }],
 			detail: 'A later embellishment.',
@@ -51,6 +53,9 @@ const exported = SetDetailSchema.parse({
 		},
 		{
 			id: 'fact-two',
+			// A fact in the implicit archetype, which is what every fact of a
+			// set written before archetypes looks like.
+			archetype: null,
 			slots: { prompt: 'кот', answer: 'cat' },
 			questions: null,
 			detail: null,
@@ -68,7 +73,9 @@ const exported = SetDetailSchema.parse({
 			],
 		},
 	],
-});
+};
+
+const exported = SetDetailSchema.parse(raw);
 
 describe('an exported set re-imports as a new set', () => {
 	const reimported = CreateSetInputSchema.parse(exported);
@@ -98,12 +105,21 @@ describe('an exported set re-imports as a new set', () => {
 		]);
 	});
 
-	it('drops the derived variants rather than rejecting them', () => {
+	it('drops the derived variants rather than rejecting them, and keeps the archetypes', () => {
 		// `variants` is computed from slots and questions on every read. Letting
 		// it back in would make a stale copy authoritative over the thing it was
-		// derived from.
-		expect(Object.keys(reimported).sort()).toEqual(['description', 'facts', 'published', 'title']);
+		// derived from. `archetypes` is the opposite case — it is content the
+		// author wrote, so a round trip that lost it would silently flatten a
+		// three-column board back to one.
+		expect(Object.keys(reimported).sort()).toEqual([
+			'archetypes',
+			'description',
+			'facts',
+			'published',
+			'title',
+		]);
 		expect(reimported.facts?.[0]).not.toHaveProperty('variants');
+		expect(reimported.facts?.[0].archetype).toBe('event');
 	});
 });
 
@@ -278,5 +294,30 @@ describe('input hygiene survives the round trip', () => {
 			facts: [{ slots: { prompt: 'only', answer: '   ' } }],
 		});
 		expect(parsed.success).toBe(false);
+	});
+});
+
+/**
+ * The board reads its columns from `facts[].archetype` and its HEADINGS from
+ * `archetypes`. Those are two different fields, and sending only the first
+ * grouped three columns correctly and then labelled all three "Everything".
+ *
+ * Pinned on the response schema rather than in the board, because the board
+ * could only ever be as right as what it is handed.
+ */
+describe('what a board needs from the detail response', () => {
+	it('carries the declared archetypes, not just the per-fact reference', () => {
+		expect(exported.archetypes).toEqual([
+			{ name: 'event', label: 'Who, where, when', ask: ['who', 'where', 'when'] },
+		]);
+	});
+
+	it('carries the archetype each fact belongs to', () => {
+		expect(exported.facts[0].archetype).toBe('event');
+	});
+
+	it('accepts null for a set that declares none', () => {
+		const parsed = SetDetailSchema.parse({ ...raw, archetypes: null });
+		expect(parsed.archetypes).toBeNull();
 	});
 });

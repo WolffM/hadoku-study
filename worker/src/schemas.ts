@@ -202,6 +202,13 @@ export const VariantSchema = z
 export const FactSchema = z
 	.object({
 		id: z.string().openapi({ example: 'qvv7k2mfjxtd' }),
+		/**
+		 * Which declared archetype this fact belongs to — the board's column.
+		 *
+		 * Null for a set that declares none. Round-trips: it is content, unlike
+		 * `variants`, so a GET response remains a valid import body.
+		 */
+		archetype: z.string().nullable(),
 		slots: SlotsSchema,
 		/**
 		 * The declarations as AUTHORED, null when the fact declares none.
@@ -256,6 +263,14 @@ export const SetSchema = z
 export const SetDetailSchema = SetSchema.extend({
 	/** Always present here, unlike on a list entry. */
 	variantCount: z.number().int().openapi({ example: 91 }),
+	/**
+	 * The set's declared columns, or null for one that declares none.
+	 *
+	 * On the DETAIL response only — a list entry does not render a board, and
+	 * a gallery of twenty sets does not want twenty archetype arrays. Null
+	 * reads as one implicit column covering every fact.
+	 */
+	archetypes: z.array(ArchetypeSchema).nullable(),
 	facts: z.array(FactSchema),
 }).openapi('SetDetail');
 

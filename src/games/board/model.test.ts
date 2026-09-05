@@ -317,3 +317,33 @@ describe('telling the author what is missing', () => {
     expect(buildBoard(cardsOf([other])).clueCount).toBe(0)
   })
 })
+
+describe('column headings', () => {
+  const cards = () =>
+    toPlayCards([
+      asks('a', 'when', 3, { archetype: 'event' }),
+      asks('b', 'where', 3, { archetype: 'event' })
+    ])
+
+  it('uses the label the author declared', () => {
+    const [column] = candidateCategories(cards(), [
+      { name: 'event', label: 'Who, where, when', ask: ['when', 'where'] }
+    ])
+    expect(column.label).toBe('Who, where, when')
+  })
+
+  it('falls back to the archetype NAME, never to "Everything"', () => {
+    // The bug: the detail response was not sending `archetypes`, so every
+    // column found its label missing and three of them were headed
+    // "Everything". A named column is never everything.
+    const [column] = candidateCategories(cards(), [])
+    expect(column.label).toBe('Event')
+    expect(column.label).not.toBe('Everything')
+  })
+
+  it('still says "Everything" for the implicit column of a mixed set', () => {
+    // A set that declares no archetypes really is one undifferentiated deck.
+    const [column] = candidateCategories(toPlayCards([asks('a', 'when'), asks('b', 'where')]))
+    expect(column.label).toBe('Everything')
+  })
+})

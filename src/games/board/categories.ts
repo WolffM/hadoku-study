@@ -126,6 +126,16 @@ export function candidateCategories(
 function headingFor(key: string, group: PlayCard[], labels: Map<string, string>): string {
   const declared = labels.get(key)
   if (declared) return declared
+
+  // A named archetype whose label did not arrive. Its NAME is still a better
+  // heading than any guess made from the questions underneath it — the author
+  // chose it, and "Everything" over a column that is plainly not everything
+  // reads as a bug, which is exactly what it was when the detail response was
+  // not sending `archetypes` at all.
+  if (key !== '') return titleCase(key)
+
+  // The implicit column, which only a set declaring no archetypes has. One
+  // kind of question names itself; a mix genuinely is the whole deck.
   const asked = new Set(group.map(card => card.ask))
   if (asked.size === 1) return labelFor([...asked][0])
   return 'Everything'

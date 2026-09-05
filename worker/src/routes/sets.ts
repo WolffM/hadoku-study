@@ -333,6 +333,12 @@ function toSetDetailJson<F extends { variants: unknown[] }>(
 	return {
 		...toSetJson(row, facts.length, viewerId),
 		variantCount: facts.reduce((total, fact) => total + fact.variants.length, 0),
+		// The board reads its column HEADINGS from here. A fact already carries
+		// the archetype it belongs to, so leaving these out still grouped the
+		// columns correctly and then labelled every one of them from a fallback
+		// — three columns all headed "Everything". Grouping and naming come
+		// from two different fields, and only one of them was being sent.
+		archetypes: parseArchetypes(row.archetypes),
 		facts,
 	};
 }
@@ -589,6 +595,12 @@ app.openapi(getFileRoute, async (c) => {
  * key and is not the owner, so an owner-only gate made the API unusable for
  * exactly the work it exists to support — the set has to be edited by hand or
  * not at all. Reading was never the problem; writing was.
+ *
+ * Used by PATCH, PUT and DELETE alike. Deletion was held back at first on the
+ * grounds that an edit is recoverable from an export and a delete is not —
+ * true, but it made the tier mean two different things on two verbs, and an
+ * agent that can replace every fact with nothing has the destructive power
+ * anyway, just spelled less honestly.
  *
  * Two properties this deliberately does NOT change:
  *   - Ownership does not move. An elevated write updates content and leaves
@@ -927,7 +939,7 @@ const deleteSetRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Delete a set',
 	description:
-		'Owner only — deletion is not extended to service tier the way editing is, because an edit is recoverable from an export and a delete is not. Facts, ratings, attempt history and every reader’s saved progress go with it.',
+		'Owner, or service tier and above. Facts, ratings, attempt history and every reader’s saved progress go with it.',
 	security: AUTHENTICATED,
 	request: { params: z.object({ id: z.string() }) },
 	responses: {
@@ -954,7 +966,7 @@ app.openapi(deleteSetRoute, async (c) => {
 	const { id } = c.req.valid('param');
 	const db = c.env.STUDY_DB;
 
-	const row = await loadSetForWrite(db, id, writer.userId);
+	const row = await loadSetForWriteAtTier(c, db, id, writer.userId);
 	if (!row) return notFoundWrapped(c, 'Set');
 
 	// Explicit, not left to ON DELETE CASCADE: D1 only enforces foreign keys
