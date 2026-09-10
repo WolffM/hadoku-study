@@ -1,15 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { labelFor } from '@wolffm/catalogue'
-
-// THE APP'S ID — the one identifier this repo states about itself. The display
-// NAME is looked up from it, so the two can never disagree. Must match the `id`
-// in hadoku_site's spec/categories.json.
-const APP_ID = 'study'
-
-// Read from the catalogue at CONFIG TIME (this file runs in node), so the name
-// is never written down in this repo and the catalogue never ships in the bundle.
-const APP_NAME = labelFor(APP_ID) ?? APP_ID
+import { APP_NAME } from './app-name'
 
 export default defineConfig({
   define: {
