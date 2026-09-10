@@ -1,8 +1,31 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { labelFor } from '@wolffm/catalogue'
+
+// THE APP'S ID — the one identifier this repo states about itself. The display
+// NAME is looked up from it, so the two can never disagree. Must match the `id`
+// in hadoku_site's spec/categories.json.
+const APP_ID = 'study'
+
+// Read from the catalogue at CONFIG TIME (this file runs in node), so the name
+// is never written down in this repo and the catalogue never ships in the bundle.
+const APP_NAME = labelFor(APP_ID) ?? APP_ID
 
 export default defineConfig({
-  plugins: [react()],
+  define: {
+    // The standalone name. Mounted by the host, `appName` in the registry props
+    // carries the live value and this is never read.
+    __HADOKU_APP_NAME__: JSON.stringify(APP_NAME)
+  },
+  plugins: [
+    {
+      // index.html is static and cannot import the catalogue; this keeps the
+      // standalone TAB and the standalone HEADER the one name.
+      name: 'hadoku-app-name',
+      transformIndexHtml: (html: string) => html.split('__HADOKU_APP_NAME__').join(APP_NAME)
+    },
+    react()
+  ],
   // Dev only — the built bundle is mounted by hadoku_site, which serves
   // /study/api from the same origin. Without this, `pnpm dev` cannot reach the
   // API at all and every view renders its error state, which makes the harness

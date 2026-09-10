@@ -34,16 +34,18 @@ export default function App(props: StudyProps = {}) {
   const containerRef = useRef<HTMLElement>(null)
   return (
     <HadokuThemeRoot theme={props.theme} containerRef={containerRef}>
-      <AppInner containerRef={containerRef} apiBaseUrl={props.apiBaseUrl} />
+      <AppInner containerRef={containerRef} appName={props.appName} apiBaseUrl={props.apiBaseUrl} />
     </HadokuThemeRoot>
   )
 }
 
 function AppInner({
   containerRef,
+  appName,
   apiBaseUrl
 }: {
   containerRef: RefObject<HTMLElement | null>
+  appName?: string
   apiBaseUrl?: string
 }) {
   const { isDarkTheme, isThemeReady, isInitialThemeLoad } = useHadokuTheme()
@@ -84,8 +86,12 @@ function AppInner({
       data-fullscreen={fullscreen ? 'true' : 'false'}
     >
       <div className="study">
+        {/* The header name is DERIVED, never written here: `appName` is the
+            platform's answer from spec/categories.json (registry props -> mount),
+            with vite's build-time value as the standalone fallback. Do not put a
+            string back. */}
         {!fullscreen && (
-          <AppHeader title="Study">
+          <AppHeader title={appName ?? __HADOKU_APP_NAME__}>
             <label className="pref-row">
               <input
                 type="checkbox"
