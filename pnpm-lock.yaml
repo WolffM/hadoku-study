@@ -95,7 +95,7 @@ importers:
         version: 9.39.5
       '@hono/zod-openapi':
         specifier: ^1.1.5
-        version: 1.6.0(hono@4.13.2)(zod@4.6.4)
+        version: 1.6.0(hono@4.13.2)(zod@4.6.5)
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.46.4
         version: 8.67.0(@typescript-eslint/parser@8.67.0(eslint@9.39.5)(typescript@5.9.3))(eslint@9.39.5)(typescript@5.9.3)
@@ -104,7 +104,7 @@ importers:
         version: 8.67.0(eslint@9.39.5)(typescript@5.9.3)
       '@wolffm/worker-utils':
         specifier: ^1.5.12
-        version: 1.5.12(zod@4.6.4)
+        version: 1.5.12(zod@4.6.5)
       eslint:
         specifier: ^9.39.1
         version: 9.39.5
@@ -2479,15 +2479,15 @@ packages:
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
-  zod@4.6.4:
-    resolution: {integrity: sha512-AXSD6hvGdvRjajG/l1cC+d6IrhH+sjmPKtYeQdJIK8MFJl3LyClzS+o/YsVC+zQZPupAaeH5skwwm8YqYH7BqA==}
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
 snapshots:
 
-  '@asteasolutions/zod-to-openapi@9.1.0(zod@4.6.4)':
+  '@asteasolutions/zod-to-openapi@9.1.0(zod@4.6.5)':
     dependencies:
       openapi3-ts: 4.6.1
-      zod: 4.6.4
+      zod: 4.6.5
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -2767,18 +2767,18 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@hono/zod-openapi@1.6.0(hono@4.13.2)(zod@4.6.4)':
+  '@hono/zod-openapi@1.6.0(hono@4.13.2)(zod@4.6.5)':
     dependencies:
-      '@asteasolutions/zod-to-openapi': 9.1.0(zod@4.6.4)
-      '@hono/zod-validator': 0.9.0(hono@4.13.2)(zod@4.6.4)
+      '@asteasolutions/zod-to-openapi': 9.1.0(zod@4.6.5)
+      '@hono/zod-validator': 0.9.0(hono@4.13.2)(zod@4.6.5)
       hono: 4.13.2
       openapi3-ts: 4.6.1
-      zod: 4.6.4
+      zod: 4.6.5
 
-  '@hono/zod-validator@0.9.0(hono@4.13.2)(zod@4.6.4)':
+  '@hono/zod-validator@0.9.0(hono@4.13.2)(zod@4.6.5)':
     dependencies:
       hono: 4.13.2
-      zod: 4.6.4
+      zod: 4.6.5
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -3247,9 +3247,9 @@ snapshots:
       react: 19.2.8
       zod: 4.4.3
 
-  '@wolffm/worker-utils@1.5.12(zod@4.6.4)':
+  '@wolffm/worker-utils@1.5.12(zod@4.6.5)':
     dependencies:
-      '@hono/zod-openapi': 1.6.0(hono@4.13.2)(zod@4.6.4)
+      '@hono/zod-openapi': 1.6.0(hono@4.13.2)(zod@4.6.5)
       '@wolffm/logger': 1.4.0
       hono: 4.13.2
     transitivePeerDependencies:
@@ -5056,4 +5056,4 @@ snapshots:
 
   zod@4.4.3: {}
 
-  zod@4.6.4: {}
+  zod@4.6.5: {}
