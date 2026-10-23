@@ -336,7 +336,7 @@ jobs:
 
       - name: Notify hadoku_site (packages_updated)
         if: steps.published.outputs.packages != ''
-        uses: WolffM/hadoku-actions/repo-action@ffd0428dbebb21199e7eb8a964fcc93dbb80cc99
+        uses: WolffM/hadoku-actions/repo-action@v1
         with:
           verb: notify
           body: '{"event_type":"packages_updated","client_payload":{"packages":${{ steps.published.outputs.packages }},"sha":"${{ github.sha }}"}}'
@@ -344,7 +344,7 @@ jobs:
 
       - name: Ask hadoku_site to redeploy the PM2 service
         if: steps.published.outputs.packages != '' && env.PM2_SERVICE_NAME != ''
-        uses: WolffM/hadoku-actions/repo-action@ffd0428dbebb21199e7eb8a964fcc93dbb80cc99
+        uses: WolffM/hadoku-actions/repo-action@v1
         with:
           verb: notify
           body: '{"event_type":"redeploy_service","client_payload":{"service":"${{ env.PM2_SERVICE_NAME }}","sha":"${{ github.sha }}"}}'

@@ -43,14 +43,14 @@ jobs:
       - name: Mark the start, so the reported duration is real
         run: echo "JOB_STARTED_AT=$(date -u +%s)" >> "$GITHUB_ENV"
 
-      # The default token, deliberately. The bump goes to bot/update-wolffm and
-      # mgmt-api fast-forwards main onto it (hadoku-actions/update-wolffm), so
-      # this repo holds no credential that can push main or touch any other repo.
+      # The DEFAULT token, deliberately: the bump is pushed to bot/update-wolffm
+      # and mgmt-api fast-forwards main onto it (hadoku-actions/update-wolffm), so
+      # this repo holds no credential that can push main or reach another repo.
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: WolffM/hadoku-actions/update-wolffm@ffd0428dbebb21199e7eb8a964fcc93dbb80cc99
+      - uses: WolffM/hadoku-actions/update-wolffm@v1
         with:
           service-key: ${{ secrets.KEY_SERVICE_STUDY }}
           npm-token: ${{ secrets.HADOKU_NPM_READ_TOKEN }}
