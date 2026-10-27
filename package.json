@@ -45,7 +45,7 @@
     "react-dom": "^19.0.0"
   },
   "dependencies": {
-    "@wolffm/prefs-client": "^1.0.19",
+    "@wolffm/prefs-client": "^1.0.20",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -56,7 +56,7 @@
     "@typescript-eslint/parser": "^8.46.4",
     "@vitejs/plugin-react": "^5.1.0",
     "@wolffm/catalogue": "^1.0.9",
-    "@wolffm/logger": "^1.4.1",
+    "@wolffm/logger": "^1.4.2",
     "@wolffm/task-ui-components": "^4.20.1",
     "@wolffm/themes": "^5.12.13",
     "eslint": "^9.39.1",
