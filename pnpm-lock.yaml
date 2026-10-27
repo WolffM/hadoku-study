@@ -103,8 +103,8 @@ importers:
         specifier: ^8.46.4
         version: 8.67.0(eslint@9.39.5)(typescript@5.9.3)
       '@wolffm/worker-utils':
-        specifier: ^1.6.10
-        version: 1.6.10(zod@4.6.7)
+        specifier: ^1.6.11
+        version: 1.6.11(hono@4.13.2)(zod@4.6.7)
       eslint:
         specifier: ^9.39.1
         version: 9.39.5
@@ -931,8 +931,10 @@ packages:
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@wolffm/worker-utils@1.6.10':
-    resolution: {integrity: sha512-3KklSeg6Xa7kfbM1iA8RNPHCSjSRakDg+8kDvBVihCtX+pQ0NP4gLU0TMzY2U3KiwxM91PmyV/mOsS4V4ZrY7A==, tarball: https://npm.pkg.github.com/download/@wolffm/worker-utils/1.6.10/76d0d80ee94fb8976354e1e76e465a9cfffd989b}
+  '@wolffm/worker-utils@1.6.11':
+    resolution: {integrity: sha512-gf3f8BO7gY954Zs/0RWoE1ovR1NsM1C3AL6ogubBBkhk9E58j36eJrl4aB+qu93s+fswCH560wdM3RXOqOkE5Q==, tarball: https://npm.pkg.github.com/download/@wolffm/worker-utils/1.6.11/e3497d1cf82ea11ee7fd38e7feea7c7cca2b89c5}
+    peerDependencies:
+      hono: ^4.11.4
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -1545,10 +1547,6 @@ packages:
 
   hermes-parser@0.25.1:
     resolution: {integrity: sha512-6pEjquH3rqaI6cYAXYPcz9MS4rY6R4ngRgrgfDshRptUZIc3lw0MCIJIGDj9++mfySOuPTHB4nrSW99BCvOPIA==}
-
-  hono@4.13.14:
-    resolution: {integrity: sha512-yhRLQ21U6qa9Hsu2N7Qcbh8tE+WKEcoErjIo56LeSGiGXGp9sA7UpE86Ui9uexb61KakiGwuHMn2QdV7w6i6kQ==}
-    engines: {node: '>=16.9.0'}
 
   hono@4.13.2:
     resolution: {integrity: sha512-JydRilDRkYBQMt9qR9U92mXxmbGqsqSn/IKOrh4e7/gEbn+0zSr8igTu0obwJoNGN4sez28DIql7FBHWydoJpA==}
@@ -2772,25 +2770,12 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@hono/zod-openapi@1.6.0(hono@4.13.14)(zod@4.6.7)':
-    dependencies:
-      '@asteasolutions/zod-to-openapi': 9.1.0(zod@4.6.7)
-      '@hono/zod-validator': 0.9.0(hono@4.13.14)(zod@4.6.7)
-      hono: 4.13.14
-      openapi3-ts: 4.6.1
-      zod: 4.6.7
-
   '@hono/zod-openapi@1.6.0(hono@4.13.2)(zod@4.6.7)':
     dependencies:
       '@asteasolutions/zod-to-openapi': 9.1.0(zod@4.6.7)
       '@hono/zod-validator': 0.9.0(hono@4.13.2)(zod@4.6.7)
       hono: 4.13.2
       openapi3-ts: 4.6.1
-      zod: 4.6.7
-
-  '@hono/zod-validator@0.9.0(hono@4.13.14)(zod@4.6.7)':
-    dependencies:
-      hono: 4.13.14
       zod: 4.6.7
 
   '@hono/zod-validator@0.9.0(hono@4.13.2)(zod@4.6.7)':
@@ -3266,11 +3251,11 @@ snapshots:
       react: 19.2.8
       zod: 4.4.3
 
-  '@wolffm/worker-utils@1.6.10(zod@4.6.7)':
+  '@wolffm/worker-utils@1.6.11(hono@4.13.2)(zod@4.6.7)':
     dependencies:
-      '@hono/zod-openapi': 1.6.0(hono@4.13.14)(zod@4.6.7)
+      '@hono/zod-openapi': 1.6.0(hono@4.13.2)(zod@4.6.7)
       '@wolffm/logger': 1.4.0
-      hono: 4.13.14
+      hono: 4.13.2
     transitivePeerDependencies:
       - zod
 
@@ -4030,8 +4015,6 @@ snapshots:
   hermes-parser@0.25.1:
     dependencies:
       hermes-estree: 0.25.1
-
-  hono@4.13.14: {}
 
   hono@4.13.2: {}
 
