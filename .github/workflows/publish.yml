@@ -155,10 +155,12 @@ jobs:
           # pnpm prints fetch errors to STDOUT: for a never-published package the
           # capture is "[ERR_PNPM_FETCH_404] ... Not Found - 404", and sort -V
           # would crown that string the version to publish (first-publish of
-          # @wolffm/meet died exactly this way). Only a bare semver may seed the walk.
-          if ! printf '%s' "$latest_published" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            latest_published=""
-          fi
+          # @wolffm/meet died exactly this way). A slow registry adds a
+          # "[WARN] Request took …ms" line ABOVE the version, so testing whether
+          # any line is a semver is not enough: that WARN line became
+          # @wolffm/whattocook-worker's version (2026-10-28). Keep only the
+          # bare-semver line; nothing else may seed the walk.
+          latest_published=$(printf '%s\n' "$latest_published" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | tail -1 || true)
           if [ -n "$latest_published" ]; then
             new_version=$(printf '%s\n%s\n' "$current_version" "$latest_published" | sort -V | tail -1)
             echo "Registry latest: $latest_published; starting walk at $new_version"
@@ -210,10 +212,12 @@ jobs:
           # pnpm prints fetch errors to STDOUT: for a never-published package the
           # capture is "[ERR_PNPM_FETCH_404] ... Not Found - 404", and sort -V
           # would crown that string the version to publish (first-publish of
-          # @wolffm/meet died exactly this way). Only a bare semver may seed the walk.
-          if ! printf '%s' "$latest_published" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            latest_published=""
-          fi
+          # @wolffm/meet died exactly this way). A slow registry adds a
+          # "[WARN] Request took …ms" line ABOVE the version, so testing whether
+          # any line is a semver is not enough: that WARN line became
+          # @wolffm/whattocook-worker's version (2026-10-28). Keep only the
+          # bare-semver line; nothing else may seed the walk.
+          latest_published=$(printf '%s\n' "$latest_published" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | tail -1 || true)
           if [ -n "$latest_published" ]; then
             new_version=$(printf '%s\n%s\n' "$current_version" "$latest_published" | sort -V | tail -1)
             echo "Registry latest: $latest_published; starting walk at $new_version"

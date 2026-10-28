@@ -10,8 +10,8 @@
  * import { createFetchHandler, type AppEnv } from '@wolffm/study-worker';
  *
  * export default {
- *   async fetch(request: Request, env: AppEnv): Promise<Response> {
- *     return createFetchHandler(env)(request);
+ *   async fetch(request: Request, env: AppEnv, ctx: ExecutionContext): Promise<Response> {
+ *     return createFetchHandler(env)(request, ctx);
  *   },
  * };
  * ```
@@ -272,7 +272,7 @@ function createApp() {
  */
 export function createFetchHandler(env: AppEnv) {
 	const app = createApp();
-	return (request: Request) => app.fetch(request, env);
+	return (request: Request, ctx: ExecutionContext) => app.fetch(request, env, ctx);
 }
 
 /** One operation, as a reader of the finished document sees it. */
