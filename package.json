@@ -45,7 +45,7 @@
     "react-dom": "^19.0.0"
   },
   "dependencies": {
-    "@wolffm/prefs-client": "^1.1.5",
+    "@wolffm/prefs-client": "^1.1.6",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -58,7 +58,7 @@
     "@wolffm/catalogue": "^1.0.11",
     "@wolffm/logger": "^1.4.3",
     "@wolffm/task-ui-components": "^4.22.1",
-    "@wolffm/themes": "^5.13.6",
+    "@wolffm/themes": "^5.13.7",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.37.5",
