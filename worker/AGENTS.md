@@ -57,9 +57,24 @@ D1, bound as `STUDY_DB`. Migrations live in
 `hadoku_site/workers/study-api/migrations/` and are applied by CI before the
 deploy — study-api is in the `apply_migrations` list in `deploy-workers.yml`.
 
-Tables: `sets`, `facts`, `variant_ratings`, `user_variant_ratings`, `attempts`,
-`set_progress`. (`cards` still exists, holding the pre-0003 rows the backfill
-was derived from. 0004 drops it once production has confirmed the migration.)
+Tables: `sets`, `facts`, `variant_ratings`. (`cards` still exists, holding the
+pre-0003 rows the backfill was derived from. 0004 drops it once production has
+confirmed the migration.)
+
+**A reader's own data is not here.** Their bookmark, their rating of each
+question and their answer ledger are prefs-api ITEMS (`src/person.ts`), because
+a record that belongs to one person lives in prefs-api (hadoku_site
+IDENTITY_MODEL R12) and is erased with their account. The worker reads and
+writes them AS the reader, through the `EDGE` binding with the key the edge
+forwarded; only sweeping a deleted set or a removed fact from every reader uses
+its own `HADOKU_SERVICE_KEY` (edge allow list `prefs-study`). Item keys are
+grouped by set: `set:<id>:progress`, `set:<id>:rating:<factId>:<variant b64>`,
+`set:<id>:attempt:<attemptId b64>`.
+
+`user_variant_ratings`, `attempts` and `set_progress` still exist in D1 for
+readers who have not been back since: `src/legacy.ts` moves a reader's rows to
+their items on their next request (create-only, so newer items win) and deletes
+them. A migration drops the three tables once none have rows.
 
 **A fact is the unit of storage, not a question.** `facts.slots` is a JSON
 object of named values — what is true. `facts.questions` is a JSON array of
@@ -87,9 +102,10 @@ to the current GLOBAL rating. So `GET /sets/{id}/ratings` writes nothing, and a
 set can be played without first inserting a row per question. The pool mean is
 per scope and held fixed across a batch.
 
-`set_progress` is a resume BOOKMARK, not a scheduling record — one row per
-reader, overwritten on every grade, deleted when a pass completes. `attempts`
-is what it could never be: append-only, one row per answer, with the rating
+The progress item is a resume BOOKMARK, not a scheduling record — one per
+reader per set, overwritten on every grade, deleted when a pass completes. The
+attempt items are what it could never be: append-only, one per answer, written
+create-only (which is also what makes a retried answer count once), with the rating
 before and after so a change to the drift formula can be replayed over history
 rather than orphaning it. Both key on VARIANT ids (`factId:variantKey`), not
 fact ids: two questions over one fact are two separate things to get right.

@@ -21,8 +21,9 @@
 
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { notFoundWrapped, okWrapped, type HadokuAuthContext } from '@wolffm/worker-utils';
-import { loadProgress, loadSetForRead } from '../db.js';
-import { readerUserId } from '../auth.js';
+import { loadSetForRead } from '../db.js';
+import { moveLegacyRows } from '../legacy.js';
+import { deleteItem, getItem, keys, personOf, putItem, type Progress } from '../person.js';
 import {
 	DeleteResponseSchema,
 	ErrorResponseSchema,
@@ -68,25 +69,27 @@ const getProgressRoute = createRoute({
 
 app.openapi(getProgressRoute, async (c) => {
 	const { id } = c.req.valid('param');
-	const userId = readerUserId(c);
+	const person = personOf(c);
 	const db = c.env.STUDY_DB;
 
 	// Resolve the set FIRST, so a set the caller cannot read 404s here exactly
 	// as it does everywhere else — rather than answering "no progress" and
 	// confirming the id exists.
-	const set = await loadSetForRead(db, id, userId);
+	const set = await loadSetForRead(db, id, person?.userId ?? null);
 	if (!set) return notFoundWrapped(c, 'Set');
 
-	if (!userId) return okWrapped(c, { progress: null });
+	if (!person) return okWrapped(c, { progress: null });
 
-	const row = await loadProgress(db, id, userId);
-	if (!row) return okWrapped(c, { progress: null });
+	// The reader's bookmark is a prefs-api item (person.ts, R12).
+	await moveLegacyRows(db, c.env, person);
+	const item = await getItem<Progress>(c.env, person, keys.progress(id));
+	if (!item) return okWrapped(c, { progress: null });
 
 	return okWrapped(c, {
 		progress: {
-			queue: JSON.parse(row.queue) as string[],
-			results: JSON.parse(row.results) as Record<string, 'got' | 'missed'>,
-			updatedAt: new Date(row.updated_at).toISOString(),
+			queue: item.value.queue,
+			results: item.value.results,
+			updatedAt: new Date(item.value.updatedAt).toISOString(),
 		},
 	});
 });
@@ -126,13 +129,13 @@ const putProgressRoute = createRoute({
 app.openapi(putProgressRoute, async (c) => {
 	const { id } = c.req.valid('param');
 	const body = c.req.valid('json');
-	const userId = readerUserId(c);
+	const person = personOf(c);
 	const db = c.env.STUDY_DB;
 
-	const set = await loadSetForRead(db, id, userId);
+	const set = await loadSetForRead(db, id, person?.userId ?? null);
 	if (!set) return notFoundWrapped(c, 'Set');
 
-	if (!userId) {
+	if (!person) {
 		return c.json(
 			{
 				success: false,
@@ -145,15 +148,8 @@ app.openapi(putProgressRoute, async (c) => {
 	}
 
 	const now = Date.now();
-	await db
-		.prepare(
-			`INSERT INTO set_progress (user_id, set_id, queue, results, updated_at)
-			 VALUES (?1, ?2, ?3, ?4, ?5)
-			 ON CONFLICT (user_id, set_id)
-			 DO UPDATE SET queue = excluded.queue, results = excluded.results, updated_at = excluded.updated_at`
-		)
-		.bind(userId, id, JSON.stringify(body.queue), JSON.stringify(body.results), now)
-		.run();
+	const progress: Progress = { queue: body.queue, results: body.results, updatedAt: now };
+	await putItem(c.env, person, keys.progress(id), progress);
 
 	return okWrapped(c, {
 		progress: { queue: body.queue, results: body.results, updatedAt: new Date(now).toISOString() },
@@ -186,9 +182,9 @@ const deleteProgressRoute = createRoute({
 
 app.openapi(deleteProgressRoute, async (c) => {
 	const { id } = c.req.valid('param');
-	const userId = readerUserId(c);
+	const person = personOf(c);
 
-	if (!userId) {
+	if (!person) {
 		return c.json(
 			{
 				success: false,
@@ -200,11 +196,9 @@ app.openapi(deleteProgressRoute, async (c) => {
 		);
 	}
 
-	// No set lookup: this deletes only the caller's OWN row, so it can neither
+	// No set lookup: this deletes only the caller's OWN item, so it can neither
 	// touch anyone else's data nor reveal whether the id exists.
-	await c.env.STUDY_DB.prepare(`DELETE FROM set_progress WHERE user_id = ?1 AND set_id = ?2`)
-		.bind(userId, id)
-		.run();
+	await deleteItem(c.env, person, keys.progress(id));
 
 	return okWrapped(c, { setId: id });
 });

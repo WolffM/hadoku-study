@@ -20,11 +20,19 @@ import {
 	listFacts,
 	loadGlobalRatings,
 	loadSetForRead,
-	loadUserRatings,
 	newId,
 	MAX_ATTEMPTS_PER_REQUEST,
 } from '../db.js';
-import { readerUserId } from '../auth.js';
+import { moveLegacyRows } from '../legacy.js';
+import {
+	deleteItem,
+	keys,
+	personOf,
+	putItem,
+	readerRatings,
+	type AttemptRecord,
+	type Person,
+} from '../person.js';
 import { readFact, variantId } from '../factRows.js';
 import { drift, initialState, poolMean, seedRating, type RatingState } from '../rating.js';
 import {
@@ -86,7 +94,7 @@ const stateOf = (row: RatingRow | undefined, fallback: number): RatingState =>
  * better than freezing your whole set at whatever global said the day you
  * first opened it.
  */
-async function ratingsFor(db: D1Database, setId: string, userId: string | null) {
+async function ratingsFor(db: D1Database, env: AppEnv, setId: string, person: Person | null) {
 	const variants: VariantRef[] = [];
 	for (const row of await listFacts(db, setId)) {
 		for (const variant of readFact(row).variants) {
@@ -99,19 +107,27 @@ async function ratingsFor(db: D1Database, setId: string, userId: string | null) 
 		globalRows.set(variantId(row.fact_id, row.variant_key), row);
 	}
 
-	const userRows = new Map<string, RatingRow>();
-	if (userId !== null) {
-		for (const row of await loadUserRatings(db, setId, userId)) {
-			userRows.set(variantId(row.fact_id, row.variant_key), row);
-		}
-	}
+	// The reader's own, from their prefs-api items (person.ts, R12).
+	const userRows = person ? await readerRatings(env, person, setId) : new Map<string, never>();
 
 	const entries = variants.map((ref) => {
 		const id = variantId(ref.factId, ref.variantKey);
 		const globalState = stateOf(globalRows.get(id), seedRating(ref.seedTier));
-		const localState = stateOf(userRows.get(id), globalState.rating);
+		const own = userRows.get(id);
+		const localState = own ? own.state : initialState(globalState.rating);
 		return { ...ref, id, globalState, localState };
 	});
+
+	// A rating of a question this set no longer asks (a slot renamed or
+	// dropped) is never read again. A save sweeps a REMOVED fact from every
+	// reader; a question that changed under a surviving fact is cleaned here,
+	// from the reader's own items, the next time they open the set.
+	if (person) {
+		const asked = new Set(entries.map((entry) => entry.id));
+		for (const [id, own] of userRows) {
+			if (!asked.has(id)) await deleteItem(env, person, own.key);
+		}
+	}
 
 	return {
 		entries,
@@ -164,16 +180,17 @@ const getRatingsRoute = createRoute({
 });
 
 app.openapi(getRatingsRoute, async (c) => {
-	const userId = readerUserId(c);
-	if (userId === null) return c.json(forbidden(NEEDS_IDENTITY), 403);
+	const person = personOf(c);
+	if (person === null) return c.json(forbidden(NEEDS_IDENTITY), 403);
 
 	const { id } = c.req.valid('param');
 	const db = c.env.STUDY_DB;
 
-	const set = await loadSetForRead(db, id, userId);
+	const set = await loadSetForRead(db, id, person.userId);
 	if (!set) return notFoundWrapped(c, 'Set');
 
-	const { entries } = await ratingsFor(db, id, userId);
+	await moveLegacyRows(db, c.env, person);
+	const { entries } = await ratingsFor(db, c.env, id, person);
 	return okWrapped(c, { ratings: entries.map(toJson) });
 });
 
@@ -216,22 +233,23 @@ const recordRoute = createRoute({
 });
 
 app.openapi(recordRoute, async (c) => {
-	const userId = readerUserId(c);
-	if (userId === null) return c.json(forbidden(NEEDS_IDENTITY), 403);
+	const person = personOf(c);
+	if (person === null) return c.json(forbidden(NEEDS_IDENTITY), 403);
 
 	const { id } = c.req.valid('param');
 	const input = c.req.valid('json');
 	const db = c.env.STUDY_DB;
 
-	const set = await loadSetForRead(db, id, userId);
+	const set = await loadSetForRead(db, id, person.userId);
 	if (!set) return notFoundWrapped(c, 'Set');
 
-	const { entries, globalMean, localMean } = await ratingsFor(db, id, userId);
+	await moveLegacyRows(db, c.env, person);
+	const { entries, globalMean, localMean } = await ratingsFor(db, c.env, id, person);
 	const byId = new Map(entries.map((entry) => [entry.id, entry]));
 
-	// Validated against the EXPANDED set, not against the stored rating rows.
-	// A key that no fact asks any more — because a slot was renamed — must not
-	// quietly open a rating row nothing will ever read again.
+	// Validated against the EXPANDED set, not against the stored ratings. A key
+	// that no fact asks any more — because a slot was renamed — must not quietly
+	// open a rating nothing will ever read again.
 	const unknown = input.attempts.find(
 		(attempt) => !byId.has(variantId(attempt.factId, attempt.variantKey))
 	);
@@ -247,92 +265,62 @@ app.openapi(recordRoute, async (c) => {
 	}
 
 	const now = Date.now();
-	const statements: D1PreparedStatement[] = [];
+	const globalWrites: D1PreparedStatement[] = [];
 	// Accumulated rather than assigned, because one request may name the same
 	// question twice — a flushed outbox replaying an offline patch does exactly
 	// that, and a recap showing only the last move would understate it.
 	const moved = new Map<string, { global: number; local: number }>();
 
-	// Answers this ledger already holds, by the client's own id.
-	//
-	// A retry is the NORMAL case, not an error: the client keeps an answer in
-	// its outbox until a send is confirmed, so a request that succeeded while
-	// the reply was lost — a closed tab, a dead tunnel — is sent again. Skipping
-	// a seen id is what makes that safe, and it has to skip the DRIFT too, not
-	// just the insert: applying it twice would move a rating for one answer
-	// twice, which is the silent corruption a duplicate row would at least be
-	// visible as.
-	//
-	// Scoped to this user. Ids are minted client-side, so another reader's
-	// collision must not silently swallow this reader's answer.
-	const offered = input.attempts.map((attempt) => attempt.attemptId).filter((v) => v !== undefined);
-	const seen = new Set<string>();
-	if (offered.length > 0) {
-		const placeholders = offered.map((_, index) => `?${index + 2}`).join(', ');
-		const rows = await db
-			.prepare(`SELECT id FROM attempts WHERE user_id = ?1 AND id IN (${placeholders})`)
-			.bind(userId, ...offered)
-			.all<{ id: string }>();
-		for (const row of rows.results) seen.add(row.id);
-	}
-
-	const { fresh, skipped } = unseenAnswers(input.attempts, seen);
+	// The same id twice in ONE request (an outbox flushed twice concurrently).
+	// Across requests the ledger itself answers, below.
+	const { fresh, skipped: repeated } = unseenAnswers(input.attempts, new Set());
+	let skipped = repeated;
 
 	for (const attempt of fresh) {
 		const entry = byId.get(variantId(attempt.factId, attempt.variantKey));
 		if (!entry) continue;
 		const result = attempt.result;
 
-		// The field is held FIXED across a batch. Recomputing it between
-		// attempts would make each answer's effect depend on the order the
-		// others happened to arrive in, which is not something a reader could
-		// see or reason about.
+		// The field is held FIXED across a batch. Recomputing it between attempts
+		// would make each answer's effect depend on the order the others happened
+		// to arrive in, which is not something a reader could see or reason about.
 		const globalDrift = drift(entry.globalState, globalMean, result);
 		const localDrift = drift(entry.localState, localMean, result);
 
-		statements.push(
-			upsertRating(
-				db,
-				'variant_ratings',
-				null,
-				entry.factId,
-				entry.variantKey,
-				globalDrift.next,
-				now
-			),
-			upsertRating(
-				db,
-				'user_variant_ratings',
-				userId,
-				entry.factId,
-				entry.variantKey,
-				localDrift.next,
-				now
-			),
-			db
-				.prepare(
-					`INSERT INTO attempts
-					   (id, user_id, set_id, fact_id, variant_key, game, result, response, rating_before, rating_after, created_at)
-					 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
-				)
-				.bind(
-					// The client's id when it sent one, so the row IS the
-					// idempotency record and a retry collides with itself.
-					attempt.attemptId ?? newId(),
-					userId,
-					id,
-					entry.factId,
-					entry.variantKey,
-					input.game,
-					result,
-					attempt.response ?? null,
-					// The reader's own rating, because that is the number this
-					// attempt was answered against and the one a replay would
-					// need to reproduce.
-					entry.localState.rating,
-					localDrift.next.rating,
-					now
-				)
+		// The ledger entry FIRST, and create-only: a retry is the normal case
+		// (the client keeps an answer until a send is confirmed, so a request
+		// whose reply was lost arrives again), and an answer the ledger already
+		// holds must not move a rating twice. Its id is the client's when it sent
+		// one, so a retry collides with itself. Ordered before the rating writes,
+		// a crash between the two loses one answer's drift; the other order would
+		// count it twice on the retry.
+		const record: AttemptRecord = {
+			factId: entry.factId,
+			variantKey: entry.variantKey,
+			game: input.game,
+			result,
+			response: attempt.response ?? null,
+			// The reader's own rating, because that is the number this attempt
+			// was answered against and the one a replay would need to reproduce.
+			ratingBefore: entry.localState.rating,
+			ratingAfter: localDrift.next.rating,
+			createdAt: now,
+		};
+		const recorded = await putItem(
+			c.env,
+			person,
+			keys.attempt(id, attempt.attemptId ?? newId()),
+			record,
+			0
+		);
+		if (!recorded) {
+			skipped++;
+			continue;
+		}
+
+		await putItem(c.env, person, keys.rating(id, entry.factId, entry.variantKey), localDrift.next);
+		globalWrites.push(
+			upsertGlobalRating(db, entry.factId, entry.variantKey, globalDrift.next, now)
 		);
 
 		// Mutated in place so a batch that names one question twice compounds
@@ -346,15 +334,12 @@ app.openapi(recordRoute, async (c) => {
 		});
 	}
 
-	// One batch, so an attempt cannot be counted in the ledger without its
-	// ratings moving, or the reverse. D1 wraps a batch in a transaction.
-	//
-	// Guarded because a request in which EVERY answer was already held is now
-	// an ordinary outcome — the confirmed-delivery retry — and `batch([])`
-	// is not something to find out about in production.
-	if (statements.length > 0) await db.batch(statements);
+	// Guarded because a request in which EVERY answer was already held is an
+	// ordinary outcome — the confirmed-delivery retry — and `batch([])` is not
+	// something to find out about in production.
+	if (globalWrites.length > 0) await db.batch(globalWrites);
 
-	attemptEvent(userId, id, input.game, input.attempts.length - skipped, skipped);
+	attemptEvent(person.userId, id, input.game, input.attempts.length - skipped, skipped);
 
 	return okWrapped(c, {
 		ratings: entries
@@ -405,38 +390,22 @@ export function unseenAnswers<T extends { attemptId?: string }>(
 	return { fresh, skipped };
 }
 
-/**
- * Write one rating row, creating it if this is its first attempt.
- *
- * One helper for both tables because the arithmetic is identical and only the
- * population differs; the per-user table simply carries a `user_id` in its key.
- */
-function upsertRating(
+/** Write the shared rating of one question, creating it on its first attempt. */
+function upsertGlobalRating(
 	db: D1Database,
-	table: 'variant_ratings' | 'user_variant_ratings',
-	userId: string | null,
 	factId: string,
 	variantKey: string,
 	next: RatingState,
 	now: number
 ): D1PreparedStatement {
-	const set = `rating = ?1, plays = ?2, run = ?3, run_result = ?4, updated_at = ?5`;
-	if (userId === null) {
-		return db
-			.prepare(
-				`INSERT INTO variant_ratings (rating, plays, run, run_result, updated_at, fact_id, variant_key)
-				 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-				 ON CONFLICT (fact_id, variant_key) DO UPDATE SET ${set}`
-			)
-			.bind(next.rating, next.plays, next.run, next.runResult, now, factId, variantKey);
-	}
 	return db
 		.prepare(
-			`INSERT INTO user_variant_ratings (rating, plays, run, run_result, updated_at, user_id, fact_id, variant_key)
-			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-			 ON CONFLICT (user_id, fact_id, variant_key) DO UPDATE SET ${set}`
+			`INSERT INTO variant_ratings (rating, plays, run, run_result, updated_at, fact_id, variant_key)
+			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+			 ON CONFLICT (fact_id, variant_key) DO UPDATE SET
+			   rating = ?1, plays = ?2, run = ?3, run_result = ?4, updated_at = ?5`
 		)
-		.bind(next.rating, next.plays, next.run, next.runResult, now, userId, factId, variantKey);
+		.bind(next.rating, next.plays, next.run, next.runResult, now, factId, variantKey);
 }
 
 export const attemptRoutes = app;

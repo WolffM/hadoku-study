@@ -2,7 +2,7 @@
  * D1 access helpers and the visibility rules every route shares.
  */
 
-import type { FactRow, ProgressRow, RatingRow, SetRow } from './types.js';
+import type { FactRow, RatingRow, SetRow } from './types.js';
 
 /** Facts per set. A set is meant to be prefetched whole on entry. */
 export const MAX_FACTS_PER_SET = 500;
@@ -211,33 +211,4 @@ export async function loadGlobalRatings(db: D1Database, setId: string): Promise<
 		.bind(setId)
 		.all<RatingRow>();
 	return res.results;
-}
-
-/** The same, for one reader. */
-export async function loadUserRatings(
-	db: D1Database,
-	setId: string,
-	userId: string
-): Promise<RatingRow[]> {
-	const res = await db
-		.prepare(
-			`SELECT r.* FROM user_variant_ratings r
-			 JOIN facts f ON f.id = r.fact_id
-			 WHERE f.set_id = ?1 AND r.user_id = ?2`
-		)
-		.bind(setId, userId)
-		.all<RatingRow>();
-	return res.results;
-}
-
-export async function loadProgress(
-	db: D1Database,
-	setId: string,
-	userId: string
-): Promise<ProgressRow | null> {
-	const row = await db
-		.prepare(`SELECT * FROM set_progress WHERE user_id = ?1 AND set_id = ?2`)
-		.bind(userId, setId)
-		.first<ProgressRow>();
-	return row ?? null;
 }

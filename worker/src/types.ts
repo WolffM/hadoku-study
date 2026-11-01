@@ -37,6 +37,23 @@ export interface AppEnv {
 	STUDY_DB: D1Database;
 
 	/**
+	 * Service binding to edge-router, which is how this worker reaches
+	 * prefs-api, where a reader's own data lives (person.ts; hadoku_site
+	 * IDENTITY_MODEL R12). A reader's items are read and written AS them, with
+	 * the key the edge forwarded on their request. Optional so a deploy without
+	 * it fails those routes with a 503 rather than failing to boot.
+	 */
+	EDGE?: Fetcher;
+
+	/**
+	 * This worker's own service key (KEY_SERVICE_STUDY), used for one thing:
+	 * sweeping a deleted set's or removed fact's items from EVERY reader, on
+	 * prefs-api's `_service/study` surface (hadoku_site edge allow list
+	 * `prefs-study`). Never for a reader's own data.
+	 */
+	HADOKU_SERVICE_KEY?: string;
+
+	/**
 	 * The read-only key registry (`key:{rawKey}` → registry row), the same
 	 * namespace edge-router owns and task-api / prefs-api / watchparty-stats-api
 	 * bind.

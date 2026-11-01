@@ -44,6 +44,7 @@ import {
 	type FactInput,
 } from '../schemas.js';
 import { askableByArchetype, askableFor, readFact, toSetFile } from '../factRows.js';
+import { keys, sweepAcrossReaders } from '../person.js';
 import type { Archetype } from '../variants.js';
 import { AUTHENTICATED, OPTIONAL_AUTH } from '../security.js';
 import { deckShape, setEvent } from '../telemetry.js';
@@ -801,6 +802,13 @@ app.openapi(replaceSetRoute, async (c) => {
 	// history and can only be incomplete.
 	const sweep = deadRatingStatements(db, stored, priorIds, new Set(ids));
 	if (sweep.length > 0) await db.batch(sweep);
+	// Every reader's own ratings of a REMOVED fact, in prefs-api (person.ts,
+	// R12). A question that changed under a surviving fact is cleaned from each
+	// reader's items the next time they open the set (attempts.ts ratingsFor).
+	const live = new Set(ids);
+	for (const factId of priorIds) {
+		if (!live.has(factId)) await sweepAcrossReaders(c.env, keys.factRatings(id, factId));
+	}
 
 	setEvent('replaced', writer, id, {
 		published: publishedAt !== null,
@@ -976,6 +984,12 @@ app.openapi(deleteSetRoute, async (c) => {
 	// Ratings key on `fact_id`, so they have to go BEFORE the facts they name —
 	// once the facts are gone there is nothing left to select them by, and the
 	// rows would be unreachable rather than merely orphaned.
+	// Every reader's own data for the set (bookmark, ratings, answers) is in
+	// prefs-api (person.ts, R12), swept first: a failure here leaves the set in
+	// place to delete again, rather than a deleted set with readers' data
+	// nothing can find any more.
+	await sweepAcrossReaders(c.env, keys.set(id));
+
 	await db.batch([
 		db
 			.prepare(
