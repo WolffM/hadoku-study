@@ -263,7 +263,8 @@ function deadRatingStatements(
 	liveIds: Set<string>
 ): D1PreparedStatement[] {
 	const statements: D1PreparedStatement[] = [];
-	const tables = ['variant_ratings', 'user_variant_ratings'] as const;
+	// Readers' own ratings are prefs-api items, swept by the caller (person.ts).
+	const tables = ['variant_ratings'] as const;
 
 	// Facts that no longer exist at all.
 	const removed = [...priorIds].filter((factId) => !liveIds.has(factId));
@@ -996,14 +997,7 @@ app.openapi(deleteSetRoute, async (c) => {
 				`DELETE FROM variant_ratings WHERE fact_id IN (SELECT id FROM facts WHERE set_id = ?1)`
 			)
 			.bind(id),
-		db
-			.prepare(
-				`DELETE FROM user_variant_ratings WHERE fact_id IN (SELECT id FROM facts WHERE set_id = ?1)`
-			)
-			.bind(id),
-		db.prepare(`DELETE FROM attempts WHERE set_id = ?1`).bind(id),
 		db.prepare(`DELETE FROM facts WHERE set_id = ?1`).bind(id),
-		db.prepare(`DELETE FROM set_progress WHERE set_id = ?1`).bind(id),
 		db.prepare(`DELETE FROM sets WHERE id = ?1`).bind(id),
 	]);
 

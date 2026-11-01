@@ -143,18 +143,10 @@ export interface FactRow {
 }
 
 /**
- * How one question stands, in one scope.
- *
- * The same shape backs `variant_ratings` (everybody's) and
- * `user_variant_ratings` (one reader's), because the arithmetic is identical
- * and only the population differs. Two row types would be two places to change
- * when the formula does.
- *
- * `user_id` is present only on the per-user table, which is why it is optional
- * here rather than modelled as a separate interface.
+ * How one question stands, everybody's (`variant_ratings`). A reader's own
+ * rating is a prefs-api item of the same shape (person.ts `RatingState`).
  */
 export interface RatingRow {
-	user_id?: string;
 	fact_id: string;
 	variant_key: string;
 	rating: number;

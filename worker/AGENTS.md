@@ -71,11 +71,6 @@ its own `HADOKU_SERVICE_KEY` (edge allow list `prefs-study`). Item keys are
 grouped by set: `set:<id>:progress`, `set:<id>:rating:<factId>:<variant b64>`,
 `set:<id>:attempt:<attemptId b64>`.
 
-`user_variant_ratings`, `attempts` and `set_progress` still exist in D1 for
-readers who have not been back since: `src/legacy.ts` moves a reader's rows to
-their items on their next request (create-only, so newer items win) and deletes
-them. A migration drops the three tables once none have rows.
-
 **A fact is the unit of storage, not a question.** `facts.slots` is a JSON
 object of named values — what is true. `facts.questions` is a JSON array of
 declarations: which slot is the ANSWER, which are shown, how it reads.

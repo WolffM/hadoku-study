@@ -22,7 +22,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { notFoundWrapped, okWrapped, type HadokuAuthContext } from '@wolffm/worker-utils';
 import { loadSetForRead } from '../db.js';
-import { moveLegacyRows } from '../legacy.js';
 import { deleteItem, getItem, keys, personOf, putItem, type Progress } from '../person.js';
 import {
 	DeleteResponseSchema,
@@ -81,7 +80,6 @@ app.openapi(getProgressRoute, async (c) => {
 	if (!person) return okWrapped(c, { progress: null });
 
 	// The reader's bookmark is a prefs-api item (person.ts, R12).
-	await moveLegacyRows(db, c.env, person);
 	const item = await getItem<Progress>(c.env, person, keys.progress(id));
 	if (!item) return okWrapped(c, { progress: null });
 

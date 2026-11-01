@@ -23,7 +23,6 @@ import {
 	newId,
 	MAX_ATTEMPTS_PER_REQUEST,
 } from '../db.js';
-import { moveLegacyRows } from '../legacy.js';
 import {
 	deleteItem,
 	keys,
@@ -189,7 +188,6 @@ app.openapi(getRatingsRoute, async (c) => {
 	const set = await loadSetForRead(db, id, person.userId);
 	if (!set) return notFoundWrapped(c, 'Set');
 
-	await moveLegacyRows(db, c.env, person);
 	const { entries } = await ratingsFor(db, c.env, id, person);
 	return okWrapped(c, { ratings: entries.map(toJson) });
 });
@@ -243,7 +241,6 @@ app.openapi(recordRoute, async (c) => {
 	const set = await loadSetForRead(db, id, person.userId);
 	if (!set) return notFoundWrapped(c, 'Set');
 
-	await moveLegacyRows(db, c.env, person);
 	const { entries, globalMean, localMean } = await ratingsFor(db, c.env, id, person);
 	const byId = new Map(entries.map((entry) => [entry.id, entry]));
 
