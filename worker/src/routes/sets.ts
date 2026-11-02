@@ -588,15 +588,15 @@ app.openapi(getFileRoute, async (c) => {
 /**
  * Load a set this caller may WRITE, honouring elevated tiers.
  *
- * Owner, or SERVICE and above. The tier ladder is
- * `public < friend < service < wife < admin`, so this admits every machine
- * credential and every human tier above friend, and holds an ordinary friend
- * to the set they own.
+ * Owner, or ADMIN. An agent restructuring somebody's set is not the owner,
+ * so an owner-only gate made the API unusable for exactly the work it exists
+ * to support; the operator's agents carry an admin token for it.
  *
- * The reason is agents. An agent restructuring somebody's set holds a service
- * key and is not the owner, so an owner-only gate made the API unusable for
- * exactly the work it exists to support — the set has to be edited by hand or
- * not at all. Reading was never the problem; writing was.
+ * It was service tier until 2026-11-02. A service key names the whole fleet,
+ * and since service grants people hold them too, so any of them could rewrite
+ * or delete anyone's set. Nothing used that: from 2026-10-10 the
+ * only service-tier writes were CI creating, studying and deleting its own
+ * sets, which the owner path admits.
  *
  * Used by PATCH, PUT and DELETE alike. Deletion was held back at first on the
  * grounds that an edit is recoverable from an export and a delete is not —
@@ -632,13 +632,12 @@ async function loadSetForWriteAtTier(
 /**
  * Whether this caller may write a set it does not own.
  *
- * By RANK, never by equality. `userType === 'service'` would lock out `wife`
- * and `admin`, which both outrank it — the bug this ecosystem has shipped
- * twice, and the reason `tierAtLeast` exists at all. Exported so the policy
+ * By RANK, never by equality, so a tier added above admin is not locked out —
+ * the equality bug this ecosystem has shipped twice. Exported so the policy
  * has a test of its own rather than living only inside a loader.
  */
 export function mayWriteAnySet(auth: HadokuAuthContext | undefined): boolean {
-	return tierAtLeast(auth, 'service');
+	return tierAtLeast(auth, 'admin');
 }
 
 // ============================================================================
@@ -651,7 +650,7 @@ const updateSetRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Update a set',
 	description:
-		'Owner, or service tier and above. A PARTIAL update — omitted fields are left alone, and facts are untouched. To write a whole set back from a file, use PUT instead. `published` is a per-set flag, not a separate copy: flipping it changes who may read the same rows.',
+		'Owner, or admin. A PARTIAL update — omitted fields are left alone, and facts are untouched. To write a whole set back from a file, use PUT instead. `published` is a per-set flag, not a separate copy: flipping it changes who may read the same rows.',
 	security: AUTHENTICATED,
 	request: {
 		params: z.object({ id: z.string() }),
@@ -727,7 +726,7 @@ const replaceSetRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Replace a whole set',
 	description:
-		'Owner, or service tier and above — an agent holding a service key can rewrite a set it does not own, and doing so does not transfer ownership. The single-file format written back over an existing set: title, description and every fact in ONE request and ONE transaction. Send each fact back with the `id` it was exported with — an id that already belongs to this set is kept, which is what preserves the ratings hanging off it; anything else is minted fresh. Omitting `published` leaves visibility alone: a file describes content, and must not be able to silently unshare a set.',
+		'Owner, or admin — an admin can rewrite a set it does not own, and doing so does not transfer ownership. The single-file format written back over an existing set: title, description and every fact in ONE request and ONE transaction. Send each fact back with the `id` it was exported with — an id that already belongs to this set is kept, which is what preserves the ratings hanging off it; anything else is minted fresh. Omitting `published` leaves visibility alone: a file describes content, and must not be able to silently unshare a set.',
 	security: AUTHENTICATED,
 	request: {
 		params: z.object({ id: z.string() }),
@@ -948,7 +947,7 @@ const deleteSetRoute = createRoute({
 	tags: ['Sets'],
 	summary: 'Delete a set',
 	description:
-		'Owner, or service tier and above. Facts, ratings, attempt history and every reader’s saved progress go with it.',
+		'Owner, or admin. Facts, ratings, attempt history and every reader’s saved progress go with it.',
 	security: AUTHENTICATED,
 	request: { params: z.object({ id: z.string() }) },
 	responses: {
