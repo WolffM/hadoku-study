@@ -10,7 +10,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { canAuthor, getUserTier, hasIdentity, tierAtLeast } from './session'
+import { canAuthor, getUserTier, hasIdentity, tierAtLeast, TIER_RANK } from './session'
+
+// friend and everything above it, derived from the ladder rather than
+// hand-typed — a tier added above friend is covered by both describe blocks
+// below with no edit to either.
+const FRIEND_AND_UP = Object.keys(TIER_RANK).filter(t => TIER_RANK[t] >= TIER_RANK.friend)
 
 /** The node test environment has no localStorage. A Map is enough to be one. */
 function installStorage(): Map<string, string> {
@@ -41,6 +46,22 @@ function setTier(tier: string) {
   store.set('hadoku_user_type', tier)
 }
 
+describe('TIER_RANK', () => {
+  // Pinned literally, not derived — FRIEND_AND_UP above reads tiers FROM this
+  // object, so a tier quietly dropped from it would make that loop stop
+  // testing that tier rather than fail. This is what actually catches that.
+  it('is the complete platform ladder', () => {
+    expect(TIER_RANK).toEqual({
+      public: 0,
+      member: 1,
+      friend: 2,
+      service: 3,
+      wife: 4,
+      admin: 5
+    })
+  })
+})
+
 describe('tierAtLeast', () => {
   it('ranks public < member < friend < service < wife < admin', () => {
     expect(tierAtLeast('member', 'public')).toBe(true)
@@ -69,7 +90,7 @@ describe('canAuthor — friend and up only', () => {
   })
 
   it('is true for friend and everything above it', () => {
-    for (const tier of ['friend', 'service', 'wife', 'admin']) {
+    for (const tier of FRIEND_AND_UP) {
       setTier(tier)
       expect(canAuthor()).toBe(true)
     }
@@ -88,7 +109,7 @@ describe('hasIdentity — any signed-in tier', () => {
   })
 
   it('is true for every tier above public', () => {
-    for (const tier of ['friend', 'service', 'wife', 'admin']) {
+    for (const tier of FRIEND_AND_UP) {
       setTier(tier)
       expect(hasIdentity()).toBe(true)
     }

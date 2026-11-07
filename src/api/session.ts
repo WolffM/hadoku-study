@@ -25,7 +25,7 @@ export type Tier = 'public' | 'member' | 'friend' | 'service' | 'wife' | 'admin'
  * An unknown tier (an older bundle meeting a newer tier name) ranks -1 and is
  * admitted nowhere. That is fail-closed on purpose.
  */
-const TIER_RANK: Record<string, number> = {
+export const TIER_RANK: Record<string, number> = {
   public: 0,
   member: 1,
   friend: 2,
