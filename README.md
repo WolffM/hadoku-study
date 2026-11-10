@@ -17,16 +17,30 @@ and why each of them is the way it is. Read it before changing anything in
 
 ## Layout
 
-| Path         | What                                                            |
-| ------------ | --------------------------------------------------------------- |
-| `src/`       | the micro-frontend (`@wolffm/study`)                            |
-| `src/games/` | one directory per playable mode, plus the registry              |
-| `src/model/` | facts, questions, and the content linter                        |
-| `worker/`    | the API (`@wolffm/study-worker`), running on D1 at `/study/api` |
+| Path          | What                                                            |
+| ------------- | --------------------------------------------------------------- |
+| `src/`        | the micro-frontend (`@wolffm/study`)                            |
+| `src/games/`  | one directory per playable mode, plus the registry              |
+| `src/wisdom/` | `/wisdom` — the map of traditions and the hand-picked pool      |
+| `research/`   | the wisdom research dossiers and how a passage gets chosen      |
+| `src/model/`  | facts, questions, and the content linter                        |
+| `worker/`     | the API (`@wolffm/study-worker`), running on D1 at `/study/api` |
 
 The host worker and the D1 migrations live in the parent repo, under
 `../hadoku_site/workers/study-api/`. Migrations are applied by CI before the
 deploy — study-api is in the `apply_migrations` list in `deploy-workers.yml`.
+
+## /wisdom — a second route on the same bundle
+
+This bundle also serves [hadoku.me/wisdom](https://hadoku.me/wisdom): a map of
+the world's ethical traditions with one hand-picked passage at a time. The
+registry entry `wisdom` in hadoku_site points at this same `/mf/study/` bundle
+with `basename: '/wisdom'`, and `App.tsx` branches on that — nothing else tells
+the two routes apart. It is entirely static: the pool is `src/wisdom/pool.ts`,
+so there is no API call and nothing to fail.
+
+To add a passage, read `research/README.md`. Locally: `pnpm dev`, then open
+`/?basename=/wisdom`.
 
 ## A set is a single file
 

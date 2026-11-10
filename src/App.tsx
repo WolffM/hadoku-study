@@ -11,10 +11,15 @@ import { useRoute } from './state/useRoute'
 import { Gallery } from './views/Gallery'
 import { SetPage } from './views/SetPage'
 import { Editor } from './views/Editor'
+import { WisdomApp } from './wisdom/WisdomApp'
 
 /** Where the API lives when the registry does not say otherwise. Same-origin
  *  through edge-router, which is what makes cookie auth work at all. */
 const DEFAULT_API_BASE = '/study/api'
+
+/** The second route this bundle serves. hadoku_site's registry points `wisdom`
+ *  at this same bundle with `basename: '/wisdom'`; nothing else tells them apart. */
+const WISDOM_BASENAME = '/wisdom'
 
 /**
  * Provider boundary.
@@ -34,7 +39,15 @@ export default function App(props: StudyProps = {}) {
   const containerRef = useRef<HTMLElement>(null)
   return (
     <HadokuThemeRoot theme={props.theme} containerRef={containerRef}>
-      <AppInner containerRef={containerRef} appName={props.appName} apiBaseUrl={props.apiBaseUrl} />
+      {props.basename === WISDOM_BASENAME ? (
+        <WisdomApp containerRef={containerRef} appName={props.appName} />
+      ) : (
+        <AppInner
+          containerRef={containerRef}
+          appName={props.appName}
+          apiBaseUrl={props.apiBaseUrl}
+        />
+      )}
     </HadokuThemeRoot>
   )
 }

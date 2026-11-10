@@ -7,6 +7,7 @@ import '@wolffm/themes/style.css'
 // the picker leaves the header markup unstyled)
 import '@wolffm/task-ui-components/app-header.css'
 import './styles/index.css'
+import './styles/wisdom.css'
 
 // Props interface for configuration from parent app
 export interface StudyProps {
@@ -21,6 +22,11 @@ export interface StudyProps {
   appName?: string
   theme?: string // Theme passed from parent (e.g., 'default', 'ocean', 'forest')
   apiBaseUrl?: string // Injected from registry props for apps with a worker API
+  /**
+   * The route this bundle is mounted at, from the registry. One bundle serves
+   * two routes: `/study` (the flashcards) and `/wisdom` (see App.tsx).
+   */
+  basename?: string
 }
 
 // Extend HTMLElement to include __root property
@@ -36,7 +42,11 @@ export function mount(el: HTMLElement, props: StudyProps = {}) {
   // `component()` rather than `info('[study] Mounted…')`: the helper stamps the
   // event type the telemetry schema expects, so a mount is queryable as a
   // lifecycle event instead of being a string someone has to grep for.
-  logger.component('mount', 'study', { theme: props.theme, apiBaseUrl: props.apiBaseUrl })
+  logger.component('mount', 'study', {
+    theme: props.theme,
+    apiBaseUrl: props.apiBaseUrl,
+    basename: props.basename
+  })
 }
 
 // Unmount function - called by parent to cleanup your app

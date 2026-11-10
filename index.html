@@ -36,12 +36,14 @@
     // Get params from URL
     const params = new URLSearchParams(window.location.search)
     const theme = params.get('theme') || undefined // Let the app handle default theme
+    // `?basename=/wisdom` previews the second route this bundle serves.
+    const basename = params.get('basename') || undefined
 
-    console.log('[mount] Mounting study with:', { theme })
+    console.log('[mount] Mounting study with:', { theme, basename })
 
-    // Mount the app
     mount(document.getElementById('app'), {
-      theme
+      theme,
+      basename
     })
   </script>
 </body>

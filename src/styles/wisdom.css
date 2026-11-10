@@ -1,0 +1,356 @@
+/**
+ * /wisdom — the map and the passage card.
+ *
+ * Same rules as index.css: theme tokens only, no var() fallbacks, and only
+ * --color-text / --color-text-secondary for words a reader must read. The
+ * accent (--color-primary) is used as LIGHT — fills and strokes on the map —
+ * never as text on a surface.
+ */
+
+.wisdom {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: var(--hdk-space-lg);
+}
+
+@media (width <= 480px) {
+  .wisdom {
+    padding: var(--hdk-space-md);
+  }
+}
+
+.wisdom__stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-block: var(--hdk-space-md);
+}
+
+.wisdom__journey {
+  margin: var(--hdk-space-sm) 0 0;
+  min-height: 1.5em;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: var(--hdk-text-sm);
+}
+
+/* ==========================================================================
+   The map
+   ========================================================================== */
+
+.wisdom-map {
+  width: 100%;
+  max-width: 34rem;
+  height: auto;
+  overflow: visible;
+  font-family: var(--font-family);
+  user-select: none;
+}
+
+.wisdom-map__halo {
+  fill: var(--color-bg-alt);
+  stroke: var(--color-border);
+  stroke-width: 0.4;
+}
+
+.wisdom-map__ring {
+  fill: none;
+  stroke: var(--color-border);
+  stroke-width: 0.3;
+  stroke-dasharray: 1 1.6;
+}
+
+.wisdom-map__ring-label {
+  fill: var(--color-text-secondary);
+  font-size: 3.4px;
+  text-anchor: middle;
+}
+
+.wisdom-map__border {
+  stroke: var(--color-border);
+  stroke-width: 0.3;
+}
+
+.wisdom-map__region {
+  fill: var(--color-text-secondary);
+  font-size: 5px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wisdom-map__glow-core {
+  stop-color: var(--color-primary);
+  stop-opacity: 0.55;
+}
+
+.wisdom-map__glow-edge {
+  stop-color: var(--color-primary);
+  stop-opacity: 0;
+}
+
+.wisdom-map__beam {
+  stroke: var(--color-primary);
+  stroke-width: 0.6;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  opacity: 0.7;
+  animation: wisdom-beam 0.7s ease-out both;
+}
+
+@keyframes wisdom-beam {
+  from {
+    stroke-dashoffset: 1;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* --- stars --------------------------------------------------------------- */
+
+.wisdom-map__star {
+  cursor: pointer;
+  outline: none;
+}
+
+.wisdom-map__hit {
+  fill: transparent;
+}
+
+.wisdom-map__dot {
+  fill: var(--color-text-tertiary);
+  transition:
+    fill 160ms ease,
+    r 160ms ease;
+}
+
+.wisdom-map__star[data-lit='true'] .wisdom-map__dot {
+  fill: var(--color-primary);
+}
+
+.wisdom-map__aura {
+  fill: var(--color-primary);
+  opacity: 0.18;
+}
+
+.wisdom-map__star[data-active='true'] .wisdom-map__aura {
+  opacity: 0.35;
+  animation: wisdom-pulse 2.8s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes wisdom-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.35);
+  }
+}
+
+.wisdom-map__star:hover .wisdom-map__dot,
+.wisdom-map__star:focus-visible .wisdom-map__dot {
+  fill: var(--color-text);
+}
+
+.wisdom-map__star[data-lit='true']:hover .wisdom-map__dot,
+.wisdom-map__star[data-lit='true']:focus-visible .wisdom-map__dot {
+  fill: var(--color-primary-hover);
+}
+
+.wisdom-map__star:focus-visible .wisdom-map__hit {
+  stroke: var(--color-primary);
+  stroke-width: 0.5;
+}
+
+.wisdom-map__label {
+  fill: var(--color-text-secondary);
+  font-size: 4px;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--color-bg-alt);
+  stroke-width: 1.2px;
+  stroke-linejoin: round;
+}
+
+.wisdom-map__star[data-lit='true'] .wisdom-map__label,
+.wisdom-map__star[data-active='true'] .wisdom-map__label {
+  fill: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* --- the light at the centre --------------------------------------------- */
+
+.wisdom-map__sun {
+  cursor: pointer;
+  outline: none;
+}
+
+.wisdom-map__sun-core {
+  fill: var(--color-primary);
+  transition: transform 200ms ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.wisdom-map__ray {
+  stroke: var(--color-primary);
+  stroke-width: 0.9;
+  stroke-linecap: round;
+  opacity: 0.8;
+}
+
+.wisdom-map__sun:hover .wisdom-map__sun-core,
+.wisdom-map__sun:focus-visible .wisdom-map__sun-core {
+  transform: scale(1.12);
+}
+
+.wisdom-map__sun:focus-visible .wisdom-map__sun-core {
+  stroke: var(--color-text);
+  stroke-width: 0.6;
+}
+
+.wisdom-map__sun:hover,
+.wisdom-map__sun:focus-visible {
+  animation: wisdom-turn 6s linear infinite;
+}
+
+@keyframes wisdom-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==========================================================================
+   The passage
+   ========================================================================== */
+
+.wisdom-card {
+  margin-top: var(--hdk-space-lg);
+  padding: var(--hdk-space-xl);
+  background: var(--color-bg-card);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hdk-radius-lg);
+  box-shadow: var(--hdk-shadow-md);
+  animation: wisdom-arrive 0.5s ease-out both;
+}
+
+@keyframes wisdom-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.wisdom-card__tradition {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--hdk-space-xs) var(--hdk-space-sm);
+  margin-bottom: var(--hdk-space-lg);
+  padding-bottom: var(--hdk-space-sm);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.wisdom-card__name {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--hdk-text-md);
+  letter-spacing: 0.02em;
+}
+
+.wisdom-card__blurb {
+  color: var(--color-text-secondary);
+  font-size: var(--hdk-text-sm);
+}
+
+.wisdom-card__text {
+  margin: 0;
+  padding-left: var(--hdk-space-lg);
+  border-left: 3px solid var(--color-primary);
+  font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  font-size: var(--hdk-text-lg);
+  line-height: 1.7;
+}
+
+.wisdom-card__text p {
+  margin: 0 0 var(--hdk-space-md);
+}
+
+.wisdom-card__text p:last-child {
+  margin-bottom: 0;
+}
+
+.wisdom-card__source {
+  margin: var(--hdk-space-lg) 0 0;
+  text-align: right;
+  font-weight: var(--font-weight-semibold);
+}
+
+.wisdom-card__translation {
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-secondary);
+}
+
+.wisdom-card__note {
+  margin: var(--hdk-space-lg) 0 0;
+  padding: var(--hdk-space-md);
+  background: var(--color-bg-alt);
+  border-radius: var(--hdk-radius);
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.wisdom-card__bridges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hdk-space-sm);
+  margin-top: var(--hdk-space-lg);
+}
+
+.wisdom-card__bridges-label {
+  color: var(--color-text-secondary);
+  font-size: var(--hdk-text-sm);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.wisdom-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hdk-space-sm);
+  margin-top: var(--hdk-space-xl);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wisdom-map__beam,
+  .wisdom-map__star[data-active='true'] .wisdom-map__aura,
+  .wisdom-map__sun:hover,
+  .wisdom-map__sun:focus-visible,
+  .wisdom-card {
+    animation: none;
+  }
+}
+
+@media (width <= 480px) {
+  .wisdom-card {
+    padding: var(--hdk-space-lg);
+  }
+
+  .wisdom-card__text {
+    padding-left: var(--hdk-space-md);
+    font-size: var(--hdk-text-md);
+  }
+}
