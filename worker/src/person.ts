@@ -19,6 +19,7 @@
  *   set:<setId>:rating:<factId>:<variant>     variant base64url (it holds <>,)
  *   set:<setId>:attempt:<attemptId>           attemptId base64url (client-minted)
  */
+import { tierAtLeast, type HadokuAuthContext } from '@wolffm/worker-utils';
 import type { Context } from 'hono';
 import type { RatingState } from './rating.js';
 import type { AppEnv } from './types.js';
@@ -34,8 +35,20 @@ export interface Person {
 	key: string;
 }
 
-/** The reader behind a request, or null when either half is missing (signed out). */
+/**
+ * The reader behind a request, or null: signed out, or below friend.
+ *
+ * Friend and up only, decided by the edge-verified tier (`tierAtLeast`), never
+ * by an identity merely being present. Since 2026-11-10 the edge stamps a
+ * MEMBER's identity on every route, and a member is a stranger who signed
+ * themselves up: their key is internal, so sending it on to prefs-api is a 401
+ * that turned every progress and rating route into an error for them. Below
+ * friend a reader is anonymous here, exactly as before members existed, and
+ * gets the anonymous answers (no progress, "stays on this device").
+ */
 export function personOf(c: Context): Person | null {
+	const auth = c.get('authContext') as HadokuAuthContext | undefined;
+	if (!tierAtLeast(auth, 'friend')) return null;
 	const userId = c.req.header('X-User-Id')?.trim();
 	const key = c.req.header('X-User-Key')?.trim();
 	return userId && key ? { userId, key } : null;

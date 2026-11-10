@@ -10,6 +10,7 @@ import {
 	fromB64url,
 	getItem,
 	keys,
+	personOf,
 	putItem,
 	readerRatings,
 	sweepAcrossReaders,
@@ -110,5 +111,35 @@ describe('person.ts', () => {
 		expect(await getItem(env, ALICE, keys.progress('s10'))).not.toBeNull();
 		const noKey = { ...env, HADOKU_SERVICE_KEY: undefined } as AppEnv;
 		await expect(sweepAcrossReaders(noKey, keys.set('s1'))).rejects.toThrow(/HADOKU_SERVICE_KEY/);
+	});
+});
+
+describe('personOf: friend and up, by the edge-verified tier', () => {
+	const ctx = (userType: string | undefined, headers: Record<string, string>) =>
+		({
+			get: (k: string) =>
+				k === 'authContext' && userType ? { userType, credential: null } : undefined,
+			req: { header: (h: string) => headers[h] },
+		}) as unknown as Parameters<typeof personOf>[0];
+	const BOTH = { 'X-User-Id': 'u-1', 'X-User-Key': 'k-1' };
+
+	it('is the reader for a friend with both halves', () => {
+		expect(personOf(ctx('friend', BOTH))).toEqual({ userId: 'u-1', key: 'k-1' });
+		expect(personOf(ctx('admin', BOTH))).toEqual({ userId: 'u-1', key: 'k-1' });
+	});
+
+	it('is nobody for a member, even with an identity and a key stamped', () => {
+		// A member's key is internal: forwarded to prefs-api it is a 401.
+		expect(personOf(ctx('member', BOTH))).toBeNull();
+	});
+
+	it('is nobody without the edge-verified tier, whatever the headers say', () => {
+		expect(personOf(ctx(undefined, BOTH))).toBeNull();
+		expect(personOf(ctx('public', BOTH))).toBeNull();
+	});
+
+	it('is nobody for a friend missing either half', () => {
+		expect(personOf(ctx('friend', { 'X-User-Id': 'u-1' }))).toBeNull();
+		expect(personOf(ctx('friend', { 'X-User-Key': 'k-1' }))).toBeNull();
 	});
 });
