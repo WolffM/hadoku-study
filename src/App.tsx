@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type RefObject } from 'react'
+import { lazy, Suspense, useCallback, useMemo, useRef, useState, type RefObject } from 'react'
 import { logger } from '@wolffm/logger/client'
 import { AppHeader, LoadingSkeleton } from '@wolffm/task-ui-components'
 import { HadokuThemeRoot, useHadokuTheme } from '@wolffm/themes'
@@ -11,7 +11,6 @@ import { useRoute } from './state/useRoute'
 import { Gallery } from './views/Gallery'
 import { SetPage } from './views/SetPage'
 import { Editor } from './views/Editor'
-import { WisdomApp } from './wisdom/WisdomApp'
 
 /** Where the API lives when the registry does not say otherwise. Same-origin
  *  through edge-router, which is what makes cookie auth work at all. */
@@ -20,6 +19,19 @@ const DEFAULT_API_BASE = '/study/api'
 /** The second route this bundle serves. hadoku_site's registry points `wisdom`
  *  at this same bundle with `basename: '/wisdom'`; nothing else tells them apart. */
 const WISDOM_BASENAME = '/wisdom'
+
+/**
+ * Lazy, so a visitor to /study never downloads /wisdom. The chunk sits next to
+ * index.js in dist/; hadoku_site's update-bundle copies every chunk the entry
+ * references. Inlining it put the entry over its bundle budget and the site
+ * refused the bump — that gate is why this is a split, not a preference.
+ */
+const WisdomApp = lazy(() => import('./wisdom/WisdomApp').then(m => ({ default: m.WisdomApp })))
+
+function WisdomFallback() {
+  const { isDarkTheme } = useHadokuTheme()
+  return <LoadingSkeleton isDarkTheme={isDarkTheme} />
+}
 
 /**
  * Provider boundary.
@@ -40,7 +52,9 @@ export default function App(props: StudyProps = {}) {
   return (
     <HadokuThemeRoot theme={props.theme} containerRef={containerRef}>
       {props.basename === WISDOM_BASENAME ? (
-        <WisdomApp containerRef={containerRef} appName={props.appName} />
+        <Suspense fallback={<WisdomFallback />}>
+          <WisdomApp containerRef={containerRef} appName={props.appName} />
+        </Suspense>
       ) : (
         <AppInner
           containerRef={containerRef}
