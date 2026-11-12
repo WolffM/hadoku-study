@@ -27,7 +27,12 @@ describe('naming a recipient', () => {
 		// Rejected rather than stripped. Stripping would turn this into an empty
 		// body, i.e. a silent SELF-CLAIM: the set would go to the caller instead
 		// of the person they named, and nothing would say so.
+		// identity-model-disable-next-line G4: The permanent regression test for the 2026-08-25 incident
+		// has to CONTAIN `{userId: 'hadoku'}` in order to assert it is REJECTED — the file previously
+		// asserted the opposite, commented 'This is a real identity'. G4 reads the literal and cannot read
+		// the assertion around it. Same exemption, same reason, as workers/shared/test/identity.test.ts.
 		expect(parse({ userId: 'hadoku' }).success).toBe(false);
+		// identity-model-disable-next-line G4: same reason as the waiver above
 		expect(parse({ name: 'thyeggman', userId: 'hadoku' }).success).toBe(false);
 	});
 
