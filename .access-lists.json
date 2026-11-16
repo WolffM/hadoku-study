@@ -1,0 +1,4 @@
+{
+  "//": "Edge access lists this repo's service identity asks to be on: list id -> the one reason. The operator grants each on hadoku_site's command-station -> Service grants; nothing grants it automatically (hadoku_site docs/operations/SECRETS.md, 'How a repo asks for an edge access list').",
+  "prefs-study": "The worker sweeps a deleted set's progress and ratings from every reader's items (/prefs/api/v1/_service/study, worker/src/person.ts)"
+}
