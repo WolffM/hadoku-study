@@ -1,11 +1,9 @@
 ---
 title: Study
 summary: >-
-  Flashcards built from facts, not cards: one true thing expands into every
-  question you can ask of it, and each question's difficulty drifts from how
-  people actually answer it rather than being authored by hand. Play a set as
-  a drill or, once it's tagged for one, as a points board. Live at
-  [hadoku.me/study](https://hadoku.me/study).
+  Flashcards built from facts rather than hand-written cards, playable at
+  [hadoku.me/study](https://hadoku.me/study) by anyone, with creating and
+  publishing a set reserved for friend tier and up.
 features:
   - name: The drill
     summary: 'Flip, swipe to grade, honor system — fast enough to play one-handed on a phone.'
@@ -44,6 +42,8 @@ each **question** is a declaration of which slot is the answer and which
 others are shown beside it. The same fact can be asked a dozen different
 ways without repeating any of its data — one set of 22 facts asks 62
 different questions.
+
+![Study's home screen, signed out: one published set, "Reformation Jeopardy," listed under Published](images/home.webp)
 
 Play a set as [the drill](features.md#the-drill), a plain pass through the
 queue, or, once enough of its facts are tagged for it, as
