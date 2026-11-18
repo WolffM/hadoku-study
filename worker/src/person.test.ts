@@ -133,6 +133,10 @@ describe('personOf: friend and up, by the edge-verified tier', () => {
 		expect(personOf(ctx('member', BOTH))).toBeNull();
 	});
 
+	it('is nobody for a guest, as for a member', () => {
+		expect(personOf(ctx('guest', BOTH))).toBeNull();
+	});
+
 	it('is nobody without the edge-verified tier, whatever the headers say', () => {
 		expect(personOf(ctx(undefined, BOTH))).toBeNull();
 		expect(personOf(ctx('public', BOTH))).toBeNull();

@@ -13,10 +13,10 @@
  * gets a 403 from the worker.
  */
 
-export type Tier = 'public' | 'member' | 'friend' | 'service' | 'wife' | 'admin'
+export type Tier = 'public' | 'guest' | 'member' | 'friend' | 'service' | 'wife' | 'admin'
 
 /**
- * `public < member < friend < service < wife < admin`.
+ * `public < guest < member < friend < service < wife < admin`.
  *
  * Compared by RANK, never by equality. `userType === 'friend'` locks out every
  * tier above friend, which is the bug that has shipped twice in this
@@ -27,11 +27,12 @@ export type Tier = 'public' | 'member' | 'friend' | 'service' | 'wife' | 'admin'
  */
 export const TIER_RANK: Record<string, number> = {
   public: 0,
-  member: 1,
-  friend: 2,
-  service: 3,
-  wife: 4,
-  admin: 5
+  guest: 1,
+  member: 2,
+  friend: 3,
+  service: 4,
+  wife: 5,
+  admin: 6
 }
 
 export function tierAtLeast(tier: string | null | undefined, min: Tier): boolean {

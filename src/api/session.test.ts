@@ -53,17 +53,22 @@ describe('TIER_RANK', () => {
   it('is the complete platform ladder', () => {
     expect(TIER_RANK).toEqual({
       public: 0,
-      member: 1,
-      friend: 2,
-      service: 3,
-      wife: 4,
-      admin: 5
+      guest: 1,
+      member: 2,
+      friend: 3,
+      service: 4,
+      wife: 5,
+      admin: 6
     })
   })
 })
 
 describe('tierAtLeast', () => {
-  it('ranks public < member < friend < service < wife < admin', () => {
+  it('ranks public < guest < member < friend < service < wife < admin', () => {
+    expect(tierAtLeast('guest', 'public')).toBe(true)
+    expect(tierAtLeast('public', 'guest')).toBe(false)
+    expect(tierAtLeast('guest', 'member')).toBe(false)
+    expect(tierAtLeast('member', 'guest')).toBe(true)
     expect(tierAtLeast('member', 'public')).toBe(true)
     expect(tierAtLeast('public', 'member')).toBe(false)
     expect(tierAtLeast('friend', 'member')).toBe(true)
@@ -84,9 +89,11 @@ describe('tierAtLeast', () => {
 })
 
 describe('canAuthor — friend and up only', () => {
-  it('is false for a member, exactly as for public', () => {
-    setTier('member')
-    expect(canAuthor()).toBe(false)
+  it('is false for a member or a guest, exactly as for public', () => {
+    for (const tier of ['member', 'guest']) {
+      setTier(tier)
+      expect(canAuthor()).toBe(false)
+    }
   })
 
   it('is true for friend and everything above it', () => {
@@ -105,6 +112,11 @@ describe('canAuthor — friend and up only', () => {
 describe('hasIdentity — any signed-in tier', () => {
   it('is true for a member: a member has a registry userId', () => {
     setTier('member')
+    expect(hasIdentity()).toBe(true)
+  })
+
+  it('is true for a guest: an account its owner made still has a userId', () => {
+    setTier('guest')
     expect(hasIdentity()).toBe(true)
   })
 
