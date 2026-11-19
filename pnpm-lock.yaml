@@ -34,8 +34,8 @@ importers:
         specifier: ^5.1.0
         version: 5.2.0(vite@7.3.6(yaml@2.9.0))
       '@wolffm/catalogue':
-        specifier: ^1.0.17
-        version: 1.0.17
+        specifier: ^1.0.18
+        version: 1.0.18
       '@wolffm/logger':
         specifier: 1.4.4
         version: 1.4.4
@@ -103,8 +103,8 @@ importers:
         specifier: ^8.46.4
         version: 8.67.0(eslint@9.39.5)(typescript@5.9.3)
       '@wolffm/worker-utils':
-        specifier: 1.7.27
-        version: 1.7.27(hono@4.13.2)(zod@4.6.7)
+        specifier: 1.7.28
+        version: 1.7.28(hono@4.13.2)(zod@4.6.7)
       eslint:
         specifier: ^9.39.1
         version: 9.39.5
@@ -899,8 +899,8 @@ packages:
   '@vue/shared@3.5.41':
     resolution: {integrity: sha512-IOnwSCma8j+9xJT6b8H0dEYidC80NsYmNMlZxRsukYcSoGaDBohog5hDxzeUXdFeGWFA++vWvxqOmrr96VlqMA==}
 
-  '@wolffm/catalogue@1.0.17':
-    resolution: {integrity: sha512-9yxMMjOtmyudc2PfVGk2hCgmquouvurdVt5z7RH/bIbFJjYswYBPL/qsMbPI+pQIdCNLsRqTCPfD9/dINfPfXg==, tarball: https://npm.pkg.github.com/download/@wolffm/catalogue/1.0.17/2ba53f9e3f91b87393b7f4d68f99bf619a33f828}
+  '@wolffm/catalogue@1.0.18':
+    resolution: {integrity: sha512-ZnW1nQ9AkF7SiFWXM0Up+BnR7IuYnMZiTvJmiw8eZZ67h3UcUx2Ks4Zf8QxRpiAp6IMP85wTTLLK0HnGK0cMwQ==, tarball: https://npm.pkg.github.com/download/@wolffm/catalogue/1.0.18/a5d75f88b8a3a2e01c2be28c4788fe17d738113d}
     engines: {node: '>=18'}
 
   '@wolffm/logger@1.4.4':
@@ -927,8 +927,8 @@ packages:
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@wolffm/worker-utils@1.7.27':
-    resolution: {integrity: sha512-F54OyR02qBegMkakLr9N/gh0GJjPY9/X0uDOTEfvjF60Pw3seViLIeBrzFo4idSdgWhR3oUEyBX42aKut5q0vw==, tarball: https://npm.pkg.github.com/download/@wolffm/worker-utils/1.7.27/2679c3b707a0f2161d48f874091f465a281b53cb}
+  '@wolffm/worker-utils@1.7.28':
+    resolution: {integrity: sha512-HdOtDIVVG20V3aYojHNxn0U1ONHGFlFu/BfBOSe8JXc594UVqLrkUFXwvLlZuEWZkIk2GBuX+maV7vJxqbGrXw==, tarball: https://npm.pkg.github.com/download/@wolffm/worker-utils/1.7.28/204665d063ac7303dd89ff177492a71bfeafe360}
     peerDependencies:
       hono: ^4.11.4
 
@@ -3224,7 +3224,7 @@ snapshots:
 
   '@vue/shared@3.5.41': {}
 
-  '@wolffm/catalogue@1.0.17': {}
+  '@wolffm/catalogue@1.0.18': {}
 
   '@wolffm/logger@1.4.4': {}
 
@@ -3245,7 +3245,7 @@ snapshots:
       react: 19.2.8
       zod: 4.4.3
 
-  '@wolffm/worker-utils@1.7.27(hono@4.13.2)(zod@4.6.7)':
+  '@wolffm/worker-utils@1.7.28(hono@4.13.2)(zod@4.6.7)':
     dependencies:
       '@hono/zod-openapi': 1.6.0(hono@4.13.2)(zod@4.6.7)
       '@wolffm/logger': 1.4.4
