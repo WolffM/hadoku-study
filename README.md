@@ -17,39 +17,19 @@ Every question carries a rating that drifts as it is played, and a board is
 and why each of them is the way it is. Read it before changing anything in
 `src/state/`, `src/games/` or the worker.
 
-## Layout
-
-| Path          | What                                                            |
-| ------------- | --------------------------------------------------------------- |
-| `src/`        | the micro-frontend (`@wolffm/study`)                            |
-| `src/games/`  | one directory per playable mode, plus the registry              |
-| `src/wisdom/` | `/wisdom` — the map of traditions and the hand-picked pool      |
-| `research/`   | the wisdom research dossiers and how a passage gets chosen      |
-| `src/model/`  | facts, questions, and the content linter                        |
-| `worker/`     | the API (`@wolffm/study-worker`), running on D1 at `/study/api` |
-
-The host worker and the D1 migrations live in the parent repo, under
-`../hadoku_site/workers/study-api/`. Migrations are applied by CI before the
-deploy — study-api is in the `apply_migrations` list in `deploy-workers.yml`.
-
-## /wisdom — a second route on the same bundle
-
-This bundle also serves [hadoku.me/wisdom](https://hadoku.me/wisdom): a map of
-the world's ethical traditions with one hand-picked passage at a time. The
-registry entry `wisdom` in hadoku_site points at this same `/mf/study/` bundle
-with `basename: '/wisdom'`, and `App.tsx` branches on that — nothing else tells
-the two routes apart. It is entirely static: the pool is `src/wisdom/pool.ts`,
-so there is no API call and nothing to fail.
-
-To add a passage, read `research/README.md`. Locally: `pnpm dev`, then open
-`/?basename=/wisdom`.
+This repo's layout and architecture are in
+[contributing.md](docs/guide/contributing.md#architecture). The host worker
+and the D1 migrations live in the parent repo, under
+`../hadoku_site/workers/study-api/`. `/wisdom`, a second route served from
+this same bundle, is covered in [features.md](docs/guide/features.md#wisdom);
+to add a passage to it, read `research/README.md`.
 
 ## A set is a single file
 
 `GET /study/api/sets/:id/file` returns the whole set as a bare document — no
 success envelope, no derived fields — and it is a valid `PUT` body exactly as
-it comes. That round trip is asserted in `worker/src/factRows.test.ts` rather
-than trusted.
+it comes (see [features.md](docs/guide/features.md#a-set-is-a-file) for why).
+The field reference:
 
 ```json
 {
@@ -96,44 +76,16 @@ than trusted.
 - **`seedTier`** (1–5) only SEEDS difficulty; play moves it from there.
 - **`detail`** is revealed after the answer — the why, never the answer.
 
-Only `title` and `facts` are required. On `PUT`, an omitted `published` leaves
-visibility **alone**: a file describes a set's content, so a hand-written one
-that never mentions publication must not be able to unshare a set.
-
-**Send each fact back with the `id` it was exported with.** Ratings and attempt
-history hang off it, and saving replaces a set's facts wholesale — a file that
-drops the ids discards everything the set has learned, with no error anywhere.
-
-A response also carries a `variants` array per fact: each declared question,
-resolved, with a stable `key`. Those keys are derived on the server and nowhere
-else, because a key computed in two places eventually disagrees with itself.
-Read them; never build one.
+Only `title` and `facts` are required; everything else `PUT` and the UI's
+**Copy JSON** / **Import a file** round trip are explained in
+[features.md](docs/guide/features.md#a-set-is-a-file) and
+[features.md](docs/guide/features.md#handing-a-set-to-an-agent).
 
 ## Handing a set to an agent
 
-Open the set and press **Copy JSON**. That puts the file on your clipboard with
-a short brief in front of it — the slot vocabulary, what `given` actually does,
-and the rule about keeping fact ids. The brief lives in `src/agentBrief.ts`;
-every paragraph in it is there because leaving it out produced a specific kind
-of bad output. **Export file** is the same content with no brief, as a
-download.
-
-Paste what comes back into the editor's **Import a file** (or **Paste a list**).
-The editor runs `src/model/lint.ts` over it and lists what it finds:
-
-- a question whose prompt **gives away its own answer** — the mistake that
-  reads fine and is worthless
-- a question that shows context it **already said**, printing it twice
-- a declaration asking a slot the fact does not have, which the server skips,
-  so the question you wrote **silently never appears**
-- two declarations that resolve to the same question
-- whether the set can fill a board, and which columns are too shallow
-
-None of that is enforced by the API — a well-formed bad set imports perfectly
-well. The linter is the difference between finding out now and finding out
-while playing.
-
-To do the same without the UI:
+To do the same without the UI — see
+[features.md](docs/guide/features.md#handing-a-set-to-an-agent) for what
+**Copy JSON** and the import linter do:
 
 ```bash
 API=https://hadoku.me/study/api
@@ -196,20 +148,8 @@ Ratings live behind two more routes, both gated on identity rather than tier:
 
 ## Development
 
-```bash
-pnpm install
-pnpm dev      # vite dev server against index.html
-pnpm test     # vitest, UI and worker
-pnpm check    # lint + stylelint + typecheck + test + build, UI AND worker
-```
-
-`pnpm check` is the gate CI runs, and `check` is this repo's required status
-context. Run it the way CI does before pushing, not the way your shell is warmed
-up:
-
-```bash
-rm -rf node_modules && pnpm install --frozen-lockfile && pnpm check
-```
+Running it locally, tests and gates, and how it deploys are in
+[contributing.md](docs/guide/contributing.md).
 
 ### Logging
 
@@ -261,10 +201,6 @@ itself — an app that also writes it fights the provider. Pass it a
 
 ## Deployment
 
-Push to `main`. CI bumps and publishes whichever packages actually changed, then
-notifies the parent site, which rebuilds the bundle under `public/mf/study/` and
-redeploys. D1 migrations apply automatically, before the worker deploys.
-
-The UI and the worker deploy **in parallel** from one commit, so a change that
-renames a response field has a minute or two where the new UI meets the old API.
-`HANDOFF.md` § "Deploying a change to the response shape" has the rule.
+See [contributing.md](docs/guide/contributing.md#how-it-deploys); for the
+UI/worker race on a renamed response field, `HANDOFF.md` §
+"Deploying a change to the response shape" has the rule.

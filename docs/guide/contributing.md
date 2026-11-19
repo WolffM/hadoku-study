@@ -36,6 +36,14 @@ phone must not depend on a tunnel host being awake.
 
 The worker's deploy config and D1 migrations live in the parent platform
 site's repo, not here; this repo owns the worker's code and the UI only.
+`study-api` is on the `apply_migrations` list in the parent's
+`deploy-workers.yml`, so CI applies pending migrations before each deploy
+rather than leaving them for someone to run by hand.
+
+`/wisdom` is a second route on this same bundle, not a second app: the
+parent site's registry has a `wisdom` entry pointing at this repo's
+`/mf/study/` bundle with `basename: '/wisdom'`, and `App.tsx` branches on
+that basename — nothing else tells the two routes apart.
 
 ### Identity and tiers
 
