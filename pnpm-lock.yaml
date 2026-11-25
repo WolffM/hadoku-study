@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@wolffm/prefs-client':
-        specifier: ^1.2.0
-        version: 1.2.0(react@19.2.8)(zod@4.4.3)
+        specifier: ^1.2.1
+        version: 1.2.1(react@19.2.8)(zod@4.4.3)
       zod:
         specifier: ^4.1.12
         version: 4.4.3
@@ -37,8 +37,8 @@ importers:
         specifier: ^1.0.18
         version: 1.0.18
       '@wolffm/logger':
-        specifier: 1.4.4
-        version: 1.4.4
+        specifier: 1.4.5
+        version: 1.4.5
       '@wolffm/task-ui-components':
         specifier: 4.23.47
         version: 4.23.47(@wolffm/themes@5.14.17(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -103,8 +103,8 @@ importers:
         specifier: ^8.46.4
         version: 8.67.0(eslint@9.39.5)(typescript@5.9.3)
       '@wolffm/worker-utils':
-        specifier: 2.0.1
-        version: 2.0.1(hono@4.13.2)(zod@4.6.7)
+        specifier: 2.0.2
+        version: 2.0.2(hono@4.13.2)(zod@4.6.7)
       eslint:
         specifier: ^9.39.1
         version: 9.39.5
@@ -903,12 +903,12 @@ packages:
     resolution: {integrity: sha512-ZnW1nQ9AkF7SiFWXM0Up+BnR7IuYnMZiTvJmiw8eZZ67h3UcUx2Ks4Zf8QxRpiAp6IMP85wTTLLK0HnGK0cMwQ==, tarball: https://npm.pkg.github.com/download/@wolffm/catalogue/1.0.18/a5d75f88b8a3a2e01c2be28c4788fe17d738113d}
     engines: {node: '>=18'}
 
-  '@wolffm/logger@1.4.4':
-    resolution: {integrity: sha512-mHtb1uTXY9U/xTvO3wh6ofy0MnZOxLVkWld0EP4hWZqxbl/crQQ/Bj5Z2PzI/Yjo9Dc+/u3x+J4YH6uJrQyrDQ==, tarball: https://npm.pkg.github.com/download/@wolffm/logger/1.4.4/6fe2bd34648eec3e0b9a817fc56cd907687363a8}
+  '@wolffm/logger@1.4.5':
+    resolution: {integrity: sha512-0st7Zo7DN4g21Fu4+DA0CXZx27HXxejJKnv5bsxMLxtEbzuLUm/Xx/n4TNPn9wTX6uTfhaWQwTWBJ5sx79sIJg==, tarball: https://npm.pkg.github.com/download/@wolffm/logger/1.4.5/5f99e62a77aed1649599a5b144e0338864a348c8}
     engines: {node: '>=18'}
 
-  '@wolffm/prefs-client@1.2.0':
-    resolution: {integrity: sha512-GlNjVutBR5yqlYhjyiz0600UAsA3o+XRjM6HC9FaxiCJo1emwgXBCsBWuZGc8rwJBRXJorNE6LLgvZekwpAz5w==, tarball: https://npm.pkg.github.com/download/@wolffm/prefs-client/1.2.0/6fe3a394f56c11a16c9402f323c4c7ecd72dbffa}
+  '@wolffm/prefs-client@1.2.1':
+    resolution: {integrity: sha512-iEsFWjlq2QREEz3NCmqoL+6u6PQgD3xLnmjPvhEQ5274u7goqev00lF6o+OeI7sLV1/5C/iWWJBFI2OmYH9OpA==, tarball: https://npm.pkg.github.com/download/@wolffm/prefs-client/1.2.1/8dc0fc02fd0b5597f5d5228d1aacb4c51f50e595}
     engines: {node: '>=18'}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
@@ -927,8 +927,8 @@ packages:
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@wolffm/worker-utils@2.0.1':
-    resolution: {integrity: sha512-t9Z4bFJp06npmTZNPdg5HoBq97RJ2TLy/3xT5z6Dqa7HBjtvMhXj/3stBMUqlZ5J465sQDb0Z56yptkWTWjkSg==, tarball: https://npm.pkg.github.com/download/@wolffm/worker-utils/2.0.1/383e0c639734a074c21bd3e3141f5f61c39532cf}
+  '@wolffm/worker-utils@2.0.2':
+    resolution: {integrity: sha512-62EpPiJCMv0rrEi/gLjOrf4cPRZogFiMK/rkx+WE/xmY0hXobn8NGhMoEBQnHs17GUIvH6JdLf2DoxiQfd2DmQ==, tarball: https://npm.pkg.github.com/download/@wolffm/worker-utils/2.0.2/e040d983979872307de351d8c85665d2bcc03090}
     peerDependencies:
       hono: ^4.11.4
 
@@ -3226,9 +3226,9 @@ snapshots:
 
   '@wolffm/catalogue@1.0.18': {}
 
-  '@wolffm/logger@1.4.4': {}
+  '@wolffm/logger@1.4.5': {}
 
-  '@wolffm/prefs-client@1.2.0(react@19.2.8)(zod@4.4.3)':
+  '@wolffm/prefs-client@1.2.1(react@19.2.8)(zod@4.4.3)':
     dependencies:
       react: 19.2.8
       zod: 4.4.3
@@ -3241,14 +3241,14 @@ snapshots:
 
   '@wolffm/themes@5.14.17(react@19.2.8)':
     dependencies:
-      '@wolffm/prefs-client': 1.2.0(react@19.2.8)(zod@4.4.3)
+      '@wolffm/prefs-client': 1.2.1(react@19.2.8)(zod@4.4.3)
       react: 19.2.8
       zod: 4.4.3
 
-  '@wolffm/worker-utils@2.0.1(hono@4.13.2)(zod@4.6.7)':
+  '@wolffm/worker-utils@2.0.2(hono@4.13.2)(zod@4.6.7)':
     dependencies:
       '@hono/zod-openapi': 1.6.0(hono@4.13.2)(zod@4.6.7)
-      '@wolffm/logger': 1.4.4
+      '@wolffm/logger': 1.4.5
       hono: 4.13.2
     transitivePeerDependencies:
       - zod
