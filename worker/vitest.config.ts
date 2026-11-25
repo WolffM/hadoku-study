@@ -9,5 +9,8 @@ export default defineConfig({
 	test: {
 		include: ['src/**/*.test.ts'],
 		environment: 'node',
+		// CI's report-tests step reads this (see the root vitest.config.ts).
+		reporters: ['default', 'json'],
+		outputFile: { json: 'reports/vitest.json' },
 	},
 });

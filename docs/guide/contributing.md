@@ -63,8 +63,11 @@ calls `tierAtLeast(auth, 'friend')` before touching anything
 ## Tests and gates
 
 `pnpm check` is the gate CI runs and this repo's required status check; it
-covers the worker's typecheck, tests and build as well as the UI's. Beyond
-the obvious unit tests, two are worth knowing about going in.
+covers the worker's typecheck, tests and build as well as the UI's. CI then
+posts every test's outcome (each package's vitest JSON report,
+`reports/vitest.json`) to the fleet test store with `report-tests`, red runs
+included. Beyond the obvious unit tests, two are worth knowing about going
+in.
 `worker/src/factRows.test.ts` round-trips a real set export through a real
 import and asserts nothing changed. `worker/src/rating.test.ts` pins the
 drift formula's worked examples as numbers, not assertions from memory —

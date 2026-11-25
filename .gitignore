@@ -30,6 +30,8 @@ pnpm-debug.log*
 
 # Testing
 coverage/
+# vitest's JSON reports (root and worker/), read by CI's report-tests step.
+reports/
 .nyc_output/
 
 # Temporary
